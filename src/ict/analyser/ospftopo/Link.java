@@ -95,7 +95,7 @@ public class Link {
 	 *            The totalBytes to set.
 	 */
 	public void setTotalBytes(long totalBytes) {
-		this.totalBytes = totalBytes;
+		this.totalBytes += totalBytes;
 	}
 
 	/**

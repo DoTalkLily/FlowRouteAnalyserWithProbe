@@ -24,10 +24,10 @@ public class ResultSender implements Runnable {
 
 	private int port = 0; // 综合分析板卡端口号
 
-	private long pid = 0; //pid
-	
+	private long pid = 0; // pid
+
 	private String ip = null; // 综合分析板卡ip地址
-	
+
 	private Socket sender = null; // 发送结果socket
 
 	private String filePath = null;// 文件路径
@@ -123,12 +123,12 @@ public class ResultSender implements Runnable {
 				if (read == -1) {
 					break;
 				}
-				os.write(buf, 0, read + 1);
+				os.write(buf, 0, read);
 				os.flush();
 			}
 		} else {
-			os.writeBytes(pid+"");
-			System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!pid:"+pid);
+			os.writeBytes(pid + "");
+			System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!pid:" + pid);
 			os.flush();
 		}
 	}
@@ -151,8 +151,8 @@ public class ResultSender implements Runnable {
 			e.printStackTrace();
 		}
 	}
-	
-	public void setPid(long pid){
+
+	public void setPid(long pid) {
 		this.pid = pid;
 	}
 

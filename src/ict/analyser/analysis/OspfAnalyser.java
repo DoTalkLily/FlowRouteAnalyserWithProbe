@@ -486,8 +486,8 @@ public class OspfAnalyser implements Runnable {
 					continue;
 				}
 				srcRouterId = idInter[0];
-                srcInterface = idInter[1];//20130606
-                
+				srcInterface = idInter[1];// 20130606
+
 				if (srcRouterId == 0) {// 合法性检验
 					netflow.getDetail();
 					logger.warning("transit!!!router id for"
@@ -1107,7 +1107,7 @@ public class OspfAnalyser implements Runnable {
 		int size = links.size();
 		long bytes = netflow.getdOctets();
 		int linkId = 0;
-//        System.out.println("path link size:"+size+"  "+path.getPathInIpFormat());
+		// System.out.println("path link size:"+size+"  "+path.getPathInIpFormat());
 		for (int i = 0; i < size; i++) {
 			link = links.get(i);
 			link.setTotalBytes(bytes);
@@ -1150,8 +1150,7 @@ public class OspfAnalyser implements Runnable {
 
 	/**
 	 * @param mapLinkIdBytes
-	 *            The mapLinkIdBytes to set.
-	 * 如果端口号为0，则算other类流量
+	 *            The mapLinkIdBytes to set. 如果端口号为0，则算other类流量
 	 */
 
 	public void setMapLidTraffic(int linkId, long bytes, int port) {
