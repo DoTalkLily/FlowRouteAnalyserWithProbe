@@ -35,7 +35,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public class TopoReceiver extends Thread {
 
 	private static int port = 2012;// 端口号(待定)
-	
+
 	private static int bufferSize = 50 * 1024;// 缓冲区大小
 
 	private boolean signal = false;// 第一个周期开始接收文件时发送给主线程的signal
@@ -217,6 +217,7 @@ public class TopoReceiver extends Thread {
 			// 调用处理topo文件函数!!!!写在FileProcesser里
 			// System.out.println("protocol:" + this.protocol);
 			if (this.protocol.equalsIgnoreCase("ospf")) {
+				this.ospfTopo = null;
 				this.ospfTopo = fileProcesser.readOspfTopo(this.ospfPath);
 				if (this.ospfTopo == null) {
 					return;

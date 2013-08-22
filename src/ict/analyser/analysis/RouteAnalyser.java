@@ -70,13 +70,14 @@ public class RouteAnalyser {
 	}
 
 	public void resetMaterials() {
+		this.foundPath.clear();// 这里去掉bug现象是：结果上报了本周起没有的链路。
+								// 原因：这里没按周期清空，因此链路丢失也一直会保存已找到的路径。
 		this.allFlows.clear();
 		this.netflows.clear();
 		this.mapSrcSpf.clear();
 		this.topNFlows.clear();
 		this.isisAnalysers.clear();
 		this.ospfAnalysers.clear();
-		// this.mapLinkIdBytes.clear();
 	}
 
 	/**
@@ -447,8 +448,8 @@ public class RouteAnalyser {
 			return; // 如果为空，返回
 		}
 
-		Iterator<Entry<Integer, TrafficLink>> iter = trafficToAdd
-				.entrySet().iterator();
+		Iterator<Entry<Integer, TrafficLink>> iter = trafficToAdd.entrySet()
+				.iterator();
 		Map.Entry<Integer, TrafficLink> entry = null;
 		int id = 0;
 		TrafficLink toAdd = null, inArr = null;
@@ -461,11 +462,17 @@ public class RouteAnalyser {
 			if (id != 0 && toAdd != null) {
 				inArr = this.mapLidTlink.get(id);
 
+				// if (inArr == null) {//modified 20130822
+				// 由于topo中的全部链路都应该出现，所以如果没出现 是异常情况
+				// this.mapLidTlink.put(id, toAdd);// 如果没有这条流量的traffic信息，则添加
+				// } else {
 				if (inArr == null) {
-					this.mapLidTlink.put(id, toAdd);// 如果没有这条流量的traffic信息，则添加
-				} else {
-					inArr.combineTraffic(toAdd);// 有则累加
+					System.out.println("link id:" + id + "  not in topo");
+					return;
 				}
+
+				inArr.combineTraffic(toAdd);// 有则累加
+				// }
 			}
 		}
 	}
