@@ -28,59 +28,73 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.logging.Logger;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 public class FileProcesser {
+	private long pid = 0;
+	private boolean isTopoChanged = true;// 标记本周期拓扑是否发生改变
+	private Logger logger = Logger.getLogger(FileProcesser.class.getName());// 注册一个logger
 
 	// parameters:
 	// The location of JSON file
 	public OspfTopo readOspfTopo(String filePath) {
-		JSONObject jObject = null;
-		OspfTopo topo = new OspfTopo();
+
+		this.isTopoChanged = true;// 默认拓扑发生改变
+
+		long ip = 0;
+		long rid = 0;
 		int size = 0;
-		int asNumber = 0;
-		long pid = 0;
 		int linkId = 0;
 		int metric = 0;
 		long prefix = 0;
-		long rid = 0;
+		int asNumber = 0;
 		long nAsNumber = 0;
+		int neighborSize = 0;
+		Link link = null;
 		String area = null;
 		String mask = null;
+		String topoString = "";
 		String routerId = null;
 		String nRouterId = null;
-		String interfaceIP = null;
 		OspfRouter router = null;
-		Link link = null;
+		String interfaceIP = null;
+		JSONObject jObject = null;
+		OspfTopo topo = new OspfTopo();
 
 		try {
-			String topoString = "";
+			// 将topo文件内容读入赋值给字符串
 			BufferedReader br = new BufferedReader(new FileReader(filePath));
-			String r = br.readLine();
-			while (r != null) {
-				topoString += r;
-				r = br.readLine();
+			String line = br.readLine();
+
+			while (line != null) {
+				topoString += line;
+				line = br.readLine();
 			}
+
 			br.close();
 			jObject = new JSONObject(topoString);
-
+			// 解析开始
+			if (!jObject.has("Topo")) {// 如果拓扑没发生变化——通过判断是否有“topo”key来判断本周期拓扑数据是否发生变化
+				this.pid = jObject.getLong("pid");
+				this.isTopoChanged = false;
+				logger.info("pid:" + pid);
+				return null;
+			}
 			// asNumber
 			asNumber = jObject.getInt("asNumber");
 			topo.setAsNumber(asNumber); // asNumber
-			System.out.println("asNumber:" + asNumber);
 			// topo
 			JSONObject topoObj = jObject.getJSONObject("Topo");
 			// pid
-			pid = topoObj.getLong("pid");
-			System.out.println("pid:" + pid);
+			this.pid = topoObj.getLong("pid");
 			topo.setPeriodId(pid);
 			// nodes
 			JSONArray nodes = topoObj.getJSONArray("nodes");
 			size = nodes.length();
-			long ip = 0;
 
 			for (int i = 0; i < size; i++) {
 				router = new OspfRouter();
@@ -88,10 +102,10 @@ public class FileProcesser {
 				routerId = node.getString("routerId");
 				rid = IPTranslator.calIPtoLong(routerId);
 				router.setRouterId(rid); // routerId
-
 				JSONArray neighbors = node.getJSONArray("neighbors");
-				int size1 = neighbors.length();
-				for (int j = 0; j < size1; j++) {
+				neighborSize = neighbors.length();
+
+				for (int j = 0; j < neighborSize; j++) {
 					JSONObject neighbor = neighbors.getJSONObject(j);
 					linkId = neighbor.getInt("id");
 					area = neighbor.getString("area");
@@ -99,6 +113,7 @@ public class FileProcesser {
 					mask = neighbor.getString("mask");
 					nRouterId = neighbor.getString("nRouterId");
 					metric = neighbor.getInt("metric");
+
 					if (linkId != 0 && area != null && interfaceIP != null
 							&& mask != null && nRouterId != null) {
 						ip = IPTranslator.calIPtoLong(interfaceIP);
@@ -112,11 +127,8 @@ public class FileProcesser {
 						link.setMetric(metric); // metric
 						router.addArea(area);
 						router.setLink(link);
-						// topo.setMapLinkIdByte(linkId);
 						topo.setMapLidTraffic(linkId);
-						// 添加到保存as内路由器ip——rid映射中
-						topo.setMapIpRouterid(ip, rid);
-
+						topo.setMapIpRouterid(ip, rid);// 添加到保存as内路由器ip——rid映射中
 						// System.out.println("ip:" +
 						// IPTranslator.calLongToIp(ip)
 						// + "  id:" + IPTranslator.calLongToIp(rid));
@@ -128,9 +140,6 @@ public class FileProcesser {
 					}
 				}
 				topo.setRidRouter(rid, router);
-				// System.out.println("rid add:" +
-				// IPTranslator.calLongToIp(rid));
-
 			}
 			// stubs
 			JSONArray stubs = topoObj.getJSONArray("stubs");
@@ -143,9 +152,9 @@ public class FileProcesser {
 				if (routerId != null && prefix != 0 && mask != null) {
 					topo.setMapPrefixRouterId(prefix,
 							IPTranslator.calIPtoLong(routerId));
-//					 System.out.println("prefix:"
-//					 + IPTranslator.calLongToIp(prefix) + "  router id"
-//					 + routerId);
+					// System.out.println("prefix:"
+					// + IPTranslator.calLongToIp(prefix) + "  router id"
+					// + routerId);
 				}
 			}
 			// asbr
@@ -176,29 +185,23 @@ public class FileProcesser {
 						&& mask != null && nRouterId != null && nAsNumber != 0
 						&& input >= 0) {
 
-					// linkId
-					// topo.setMapLinkIdByte(linkId);
-					topo.setMapLidTraffic(linkId);
+					topo.setMapLidTraffic(linkId);// linkId
 					interLink.setLinkId(linkId);
 					// routerId
 					rid = IPTranslator.calIPtoLong(routerId);// 这里的routerId是邻居as的asbr的rid
 					interLink.setMyBrId(rid);
-					// interLink.setNeighborBrId(rid);
 					// interfaceIp
 					ip = IPTranslator.calIPtoLong(interfaceIP);// 这里的interfaceip是邻居as的asbr的接口ip
 					interLink.setMyInterIp(ip);
-					// interLink.setNeighborBrIp(ip);
 					// mask
 					masklong = IPTranslator.calIPtoLong(mask);
 					interLink.setMask(masklong);
 					// nRouterId
 					rid = IPTranslator.calIPtoLong(nRouterId);// 这里“nRouterId”是本as的asbr的id
 					interLink.setNeighborBrId(rid);
-					// interLink.setMyBrId(rid);
 					// nInterfaceIP
 					ip = IPTranslator.calIPtoLong(ipstr);// 这里的“nInterfaceIP”是本as的asbr的接口ip
 					interLink.setNeighborBrIp(ip);
-					// interLink.setMyInterIp(ip);
 					// nAsNumber
 					interLink.setNeighborAS(nAsNumber);
 					// metric
@@ -213,7 +216,6 @@ public class FileProcesser {
 					topo.setInterAsLinks(interLink);// 设置边界链路
 					topo.setMapASBRIpLinkId(interLink.getMyInterIp(), linkId);// 边界路由器ip——链路ip映射，两端的ip都存
 					topo.setMapASBRIpLinkId(interLink.getNeighborBrIp(), linkId);
-					// topo.setMapInputLinkid(rid, input, linkId);
 				}
 			}
 
@@ -259,31 +261,42 @@ public class FileProcesser {
 	}
 
 	public IsisTopo readIsisTopo(String filePath) {
+		this.isTopoChanged = true;
 
+		long rid = 0;
 		int level = 0;
 		int metric = 0;
 		int linkId = 0;
 		int sysType = 0;
-		long rid = 0;
 		long prefix = 0;
+		Link link = null;
 		String sysId = null;
 		String nSysId = null;
-		Link link = null;
+		String topoString = "";
 		IsisRouter router = null;
+		JSONObject jObject = null;
 		IsisTopo topo = new IsisTopo();
 		ArrayList<Long> brIds = new ArrayList<Long>();
-		JSONObject jObject = null;
 
 		try {
-			String topoString = "";
 			BufferedReader br = new BufferedReader(new FileReader(filePath));
-			String r = br.readLine();
-			while (r != null) {
-				topoString += r;
-				r = br.readLine();
+			String line = br.readLine();
+
+			while (line != null) {
+				topoString += line;
+				line = br.readLine();
 			}
+
 			br.close();
 			jObject = new JSONObject(topoString);
+
+			// 解析开始
+			if (!jObject.has("Topo")) {// 如果拓扑没发生变化——通过判断是否有“topo”key来判断本周期拓扑数据是否发生变化
+				this.pid = jObject.getLong("pid");
+				this.isTopoChanged = false;
+				logger.info("pid:" + pid);
+				return null;
+			}
 
 			level = jObject.getInt("level");
 
@@ -300,10 +313,10 @@ public class FileProcesser {
 			topo.setAreaId(areaId);
 
 			JSONObject jTopo = jObject.getJSONObject("Topo");
-			long pid = jTopo.getLong("pid");
-			topo.setPid(pid);
+			this.pid = jTopo.getLong("pid");
+			topo.setPeriodId(this.pid);
 			topo.setNetworkType(level);
-			System.out.println("pid : " + pid);
+			logger.info("pid : " + pid);
 
 			JSONArray nodes = jTopo.getJSONArray("nodes");
 			int size = nodes.length();
@@ -414,9 +427,9 @@ public class FileProcesser {
 	}
 
 	public String writeResult(HashMap<Integer, TrafficLink> mapLidTlink,
-			HashMap<Long, StatisticItem> allStatistics, int interval, long pid) {
+			HashMap<Long, StatisticItem> allStatistics, int interval) {
 
-		String path = "TrafficTopoResult_" + pid + ".json";
+		String path = "TrafficTopoResult_" + this.pid + ".json";
 		int id = 0;
 		FileWriter fw = null;
 		PrintWriter pw = null;
@@ -590,5 +603,19 @@ public class FileProcesser {
 			e.printStackTrace();
 		}
 		return path;
+	}
+
+	/**
+	 * @return Returns the isTopoChanged.
+	 */
+	public boolean isTopoChanged() {
+		return isTopoChanged;
+	}
+
+	/**
+	 * @return Returns the pid.
+	 */
+	public long getPid() {
+		return pid;
 	}
 }

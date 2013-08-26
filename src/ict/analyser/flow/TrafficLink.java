@@ -15,6 +15,8 @@ import java.util.HashMap;
  * @version 1.0, 2013-5-27
  */
 public class TrafficLink {
+	private int linkId = 0;// 链路id
+
 	private long ftp = 0; // ftp业务流量，对应端口号21
 
 	private long http = 0;// http 业务流量，端口80
@@ -24,6 +26,25 @@ public class TrafficLink {
 	private long other = 0;// 其他流量
 
 	private long telnet = 0;// telnet业务流量，端口23
+
+	public TrafficLink(int linkId) {
+		this.linkId = linkId;
+	}
+
+	/**
+	 * @return Returns the linkId.
+	 */
+	public int getLinkId() {
+		return linkId;
+	}
+
+	/**
+	 * @param linkId
+	 *            The linkId to set.
+	 */
+	public void setLinkId(int linkId) {
+		this.linkId = linkId;
+	}
 
 	/**
 	 * @return Returns the ftp.

@@ -320,7 +320,7 @@ public class IsisTopo {
 	 * @param pid
 	 *            The pid to set.
 	 */
-	public void setPid(long pid) {
+	public void setPeriodId(long pid) {
 		this.periodId = pid;
 	}
 

@@ -253,8 +253,7 @@ public class MainProcesser {
 		}
 
 		filePath = this.fileProcesser.writeResult(this.mapLidTlink,
-				this.ipStatistics.getAllItems(), this.configData.getInterval(),
-				pid);// 调用fileProcesser来将得到的路径写入文件中,返回文件路径
+				this.ipStatistics.getAllItems(), this.configData.getInterval());// 调用fileProcesser来将得到的路径写入文件中,返回文件路径
 
 		// System.out.println("global analysis ip:"
 		// + this.configData.getGlobalAnalysisIP() + "   port:"

@@ -69,7 +69,7 @@ public class OspfTopo {
 			return;
 		}
 
-		TrafficLink link = new TrafficLink();
+		TrafficLink link = new TrafficLink(id);
 		this.mapLidTlink.put(id, link);
 	}
 
@@ -380,11 +380,12 @@ public class OspfTopo {
 		if (obj != null) {
 			result[0] = (Long) obj;// 保存路由器id
 			result[1] = prefix;// 保存路由器接口对应网段值
-			
+
 			return result;
 		}
 
-		obj = this.mapExternallsa.get(prefix);//当是outbound 和transit流量时，dstInterface无法确定，因此存入dstPrefix
+		obj = this.mapExternallsa.get(prefix);// 当是outbound
+												// 和transit流量时，dstInterface无法确定，因此存入dstPrefix
 
 		if (obj != null) {
 			ArrayList<AsExternalLSA> arr = (ArrayList<AsExternalLSA>) obj;
@@ -584,9 +585,9 @@ public class OspfTopo {
 		long[] result = new long[2];
 
 		if (this.mapIpRouterid.get(ip) != null) {
-//			long masklong = IPTranslator.calByteToLong(mask);
+			// long masklong = IPTranslator.calByteToLong(mask);
 			result[0] = this.mapIpRouterid.get(ip);
-//			result[1] = ip & masklong;//20130606  这里应保存接口ip而不是前缀信息
+			// result[1] = ip & masklong;//20130606 这里应保存接口ip而不是前缀信息
 			result[1] = ip;
 			return result;
 		}
@@ -617,8 +618,8 @@ public class OspfTopo {
 	public void setMapIpRouterid(long ip, long rid) {
 		if (ip != 0 && rid != 0) {
 			this.mapIpRouterid.put(ip, rid);
-//			System.out.println("ip:" + IPTranslator.calLongToIp(ip) + "  id:"
-//					+ IPTranslator.calLongToIp(rid));
+			// System.out.println("ip:" + IPTranslator.calLongToIp(ip) + "  id:"
+			// + IPTranslator.calLongToIp(rid));
 		}
 	}
 
@@ -636,7 +637,7 @@ public class OspfTopo {
 				result[1] = linkid;// 链路id
 				// result[2] = router.getPrefixByLinkId(linkid); //错误！
 				// 根据ip得到该ip所在网段
-//				result[2] = getPrefixByLinkid(linkid);//20130606这里改成保存路由器接口ip
+				// result[2] = getPrefixByLinkid(linkid);//20130606这里改成保存路由器接口ip
 				result[2] = getIpByLinkid(linkid);
 			} else {
 				System.out.println("!!!!!!!!!!!!!!! router not found!!!!");
@@ -662,7 +663,7 @@ public class OspfTopo {
 		}
 		return 0;
 	}
-	
+
 	public long getIpByLinkid(int linkid) {
 		int size = this.interAsLinks.size();
 		InterAsLink link = null;
