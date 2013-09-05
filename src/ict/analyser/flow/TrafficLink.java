@@ -16,19 +16,25 @@ import java.util.HashMap;
  */
 public class TrafficLink {
 	private int linkId = 0;// 链路id
-
 	private long ftp = 0; // ftp业务流量，对应端口号21
-
 	private long http = 0;// http 业务流量，端口80
-
 	private long total = 0;// 总流量
-
 	private long other = 0;// 其他流量
-
 	private long telnet = 0;// telnet业务流量，端口23
 
 	public TrafficLink(int linkId) {
 		this.linkId = linkId;
+	}
+
+	/**
+	 * 重置变量
+	 */
+	public void resetValues() {
+		this.ftp = 0;
+		this.http = 0;
+		this.other = 0;
+		this.total = 0;
+		this.telnet = 0;
 	}
 
 	/**

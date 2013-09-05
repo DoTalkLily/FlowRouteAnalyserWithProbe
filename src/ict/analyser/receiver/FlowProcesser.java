@@ -25,9 +25,7 @@ public class FlowProcesser extends Thread {
 
 	@Override
 	public void run() {
-
 		read_loop();
-
 	}
 
 	public void read_loop() {
@@ -35,7 +33,6 @@ public class FlowProcesser extends Thread {
 		byte[] oneFlow = null;
 
 		while (true) {
-
 			oneFlow = this.collector.getOneFlowBytes();
 
 			if (oneFlow == null) {
@@ -44,9 +41,7 @@ public class FlowProcesser extends Thread {
 
 			currentFlow = new Netflow(oneFlow);// 得到一条flow对象
 
-			// System.out.println("current flow got!");
 			if (currentFlow != null) {
-				// System.out.println("one flow got!");
 				this.collector.insertFlow(currentFlow);
 			}
 		}

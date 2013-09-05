@@ -11,6 +11,10 @@ import ict.analyser.tools.IPTranslator;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.logging.Logger;
 
 /**
  * 
@@ -19,34 +23,24 @@ import java.util.HashMap;
  * @version 1.0, 2012-10-18
  */
 public class OspfTopo {
-
 	private long periodId = 0;// 周期id，标记当前是第几周期
-
 	private int asNumber = 0;// 拓扑所在AS号
-
-	private ArrayList<InterAsLink> interAsLinks = null;
-
-	private ArrayList<Long> asbrIds = null;
-
+	private ArrayList<Long> asbrIds = null;// 保存全部边界路由器id
+	private ArrayList<Long> allRouterIds = null;// 保存全网路由器id列表
 	private HashMap<Long, Long> mapASBRipId = null;// ASBR的接口ip(long)——设备id,来自TOPO文件中的“asbr”
-
-	private HashMap<Long, OspfRouter> mapRidAsbr = null;// 拓扑中边界路由器id——路由器对象映射
-
-	private HashMap<Long, Long> mapPrefixRouterId = null;// topo文件中stubs对应的
-															// 拓扑中前缀与路由器id对应的映射,用于根据prefix查找路由器id，这里如果是网络中宣告prefix的路由器会有两个，但是这里只保存所有只有一个路由器宣告这个prefix的映射（优化）
-	private HashMap<Long, Integer> mapASBRIpLinkid = null;// ASBR路由器开启监听netflow接口的ip地址和linkid
-															// 对应映射
 	private HashMap<Long, Long> mapIpRouterid = null;// 保存本AS内路由器ip——id映射
-
-	private HashMap<Long, ArrayList<AsExternalLSA>> mapExternallsa = null;// 网络号（即网络前缀）——ArrayList<AsExternalLSA>映射，这个结构不放在area类原因是它设计到as级的路由器id查找
-
+	private ArrayList<InterAsLink> interAsLinks = null;// 边界链路对象列表
+	private HashMap<Long, OspfRouter> mapRidAsbr = null;// 拓扑中边界路由器id——路由器对象映射
+	private HashMap<Long, Long> mapPrefixRouterId = null;// topo文件中stubs对应的
+	private HashMap<Long, Integer> mapASBRIpLinkid = null;// ASBR路由器开启监听netflow接口的ip地址和linkid
 	private HashMap<Long, OspfRouter> mapRidRouter = null;// 路由器id——Router映射
-
-	private HashMap<Integer, TrafficLink> mapLidTlink = null;// link id
-																// ——TrafficLink
+	private HashMap<Integer, TrafficLink> mapLidTlink = null;// linkid——TrafficLink
+	private HashMap<Long, ArrayList<AsExternalLSA>> mapExternallsa = null;// 网络号（即网络前缀）——ArrayList<AsExternalLSA>映射，这个结构不放在area类原因是它设计到as级的路由器id查找
+	private Logger logger = Logger.getLogger(OspfTopo.class.getName());// 注册一个logger
 
 	public OspfTopo() {
 		this.asbrIds = new ArrayList<Long>();
+		this.allRouterIds = new ArrayList<Long>();
 		this.mapASBRipId = new HashMap<Long, Long>();
 		this.mapIpRouterid = new HashMap<Long, Long>();
 		this.interAsLinks = new ArrayList<InterAsLink>();
@@ -175,9 +169,8 @@ public class OspfTopo {
 	}
 
 	public OspfRouter getRouterById(long routerId) {
-
 		if (routerId == 0) {
-			System.out.println("router id is illegal in OspfAnalyser！");
+			logger.warning("router id is illegal in OspfAnalyser！");
 			return null;
 		}
 
@@ -418,6 +411,31 @@ public class OspfTopo {
 	}
 
 	/**
+	 * 每周期结束清空map id——traffic对应的traffic信息
+	 */
+	public void resetTrafficData() {
+		if (this.mapLidTlink == null) {
+			return;
+		}
+
+		TrafficLink link = null;
+		Map.Entry<Integer, TrafficLink> entry = null;
+		Iterator<Entry<Integer, TrafficLink>> iter = this.mapLidTlink
+				.entrySet().iterator();
+
+		while (iter.hasNext()) {
+			entry = iter.next();
+			link = entry.getValue();
+
+			if (link == null) {
+				continue;
+			}
+
+			link.resetValues();
+		}
+	}
+
+	/**
 	 * @return Returns the interAsLinks.
 	 */
 	public ArrayList<InterAsLink> getInterAsLinks() {
@@ -567,7 +585,15 @@ public class OspfTopo {
 	public void setRidRouter(long rid, OspfRouter router) {
 		if (rid != 0 && router != null) {
 			this.mapRidRouter.put(rid, router);
+			this.allRouterIds.add(rid);
 		}
+	}
+
+	/**
+	 * @return Returns the mapRidRouter.
+	 */
+	public HashMap<Long, OspfRouter> getMapRidRouter() {
+		return mapRidRouter;
 	}
 
 	public int getLinkIdByIp(long ip) {
@@ -618,8 +644,6 @@ public class OspfTopo {
 	public void setMapIpRouterid(long ip, long rid) {
 		if (ip != 0 && rid != 0) {
 			this.mapIpRouterid.put(ip, rid);
-			// System.out.println("ip:" + IPTranslator.calLongToIp(ip) + "  id:"
-			// + IPTranslator.calLongToIp(rid));
 		}
 	}
 
@@ -627,25 +651,24 @@ public class OspfTopo {
 		Object[] result = null;
 		Object rid = mapIpRouterid.get(ip);
 
-		if (rid != null) {
-			OspfRouter router = mapRidRouter.get((Long) rid);
-
-			if (router != null) {
-				int linkid = router.getLinkidByInput(input);
-				result = new Object[3];
-				result[0] = rid;// 路由器id
-				result[1] = linkid;// 链路id
-				// result[2] = router.getPrefixByLinkId(linkid); //错误！
-				// 根据ip得到该ip所在网段
-				// result[2] = getPrefixByLinkid(linkid);//20130606这里改成保存路由器接口ip
-				result[2] = getIpByLinkid(linkid);
-			} else {
-				System.out.println("!!!!!!!!!!!!!!! router not found!!!!");
-
-			}
-		} else {
-			System.out.println("!!!!!!!!!!!!!!! rid not found!!!!");
+		if (rid == null) {
+			logger.warning("router id not found for ip:"
+					+ IPTranslator.calLongToIp(ip));
+			return null;
 		}
+		OspfRouter router = mapRidRouter.get((Long) rid);
+
+		if (router == null) {
+			logger.warning("router not found for ip:"
+					+ IPTranslator.calLongToIp(ip));
+			return null;
+		}
+
+		int linkid = router.getLinkidByInput(input);
+		result = new Object[3];
+		result[0] = rid;// 路由器id
+		result[1] = linkid;// 链路id
+		result[2] = getIpByLinkid(linkid);
 
 		return result;
 	}
@@ -691,5 +714,23 @@ public class OspfTopo {
 			}
 		}
 		return ips;
+	}
+
+	/*
+	 * 返回拓扑中路由器数量
+	 */
+	public int getRouterCount() {
+		if (this.allRouterIds == null) {
+			return 0;
+		}
+
+		return this.allRouterIds.size();
+	}
+
+	/*
+	 * 返回全网路由器id列表
+	 */
+	public ArrayList<Long> getAllRouterIds() {
+		return this.allRouterIds;
 	}
 }

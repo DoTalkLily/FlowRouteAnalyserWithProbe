@@ -7,6 +7,7 @@
 package ict.analyser.receiver;
 
 import ict.analyser.config.ConfigData;
+import ict.analyser.tools.FileProcesser;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -26,36 +27,29 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+.ReentrantLock;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class ConfigReceiver extends Thread {
-
-	private static int port = 7890; // web发布与数据库板卡负责分发配置文件的端口
-
-	private static int bufferSize = 8192;// 缓冲区大小
-
 	private Socket client = null;// 连接到本服务器的客户端socket
-
-	private PrintWriter writer = null;// 输出流到配置管理server
-
-	private ServerSocket server = null;// 服务器socket
-
-	private ConfigData configData = null;// 保存解析后得到的配置信息的类，主分析进程将读取
-
-	private DataInputStream fileIn = null;// 输入流
-
-	private DataOutputStream fileOut = null;// 输出流到本地文件
-
-	private static String savePath = "config.json";// 接收到的文件保存到的路径本地(待定)
-
+	private static int PORT = 7890; // web发布与数据库板卡负责分发配置文件的端口
+	private static int BUFFER_SIZE = 8192;// 缓冲区大小
 	private Lock locker = null;// 加锁
-
+	private PrintWriter writer = null;// 输出流到配置管理server
 	private Condition condition = null;// 设置等待唤醒，相当于wait/notify
+	private ServerSocket server = null;// 服务器socket
+	private ConfigData configData = null;// 保存解析后得到的配置信息的类，主分析进程将读取
+	private DataInputStream fileIn = null;// 输入流
+	private DataOutputStream fileOut = null;// 输出流到本地文件
+	private static String SAVE_PATH = "config.json";// 接收到的文件保存到的路径本地(待定)
 
 	public ConfigReceiver() {
 		locker = new ReentrantLock();// 初始化锁
 		condition = locker.newCondition();// 初始化等待唤醒条件
 		try {
-			server = new ServerSocket(port);
+			server = new ServerSocket(PORT);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -91,7 +85,7 @@ public class ConfigReceiver extends Thread {
 					client.getInputStream()));
 
 			fileOut = new DataOutputStream(new BufferedOutputStream(
-					new BufferedOutputStream(new FileOutputStream(savePath))));
+					new BufferedOutputStream(new FileOutputStream(SAVE_PATH))));
 
 			writer = new PrintWriter(client.getOutputStream(), true);
 
@@ -107,7 +101,7 @@ public class ConfigReceiver extends Thread {
 	 * @throws IOException
 	 */
 	public void getFile() throws IOException {
-		byte[] buf = new byte[bufferSize];// 开辟一个接收文件缓冲区
+		byte[] buf = new byte[BUFFER_SIZE];// 开辟一个接收文件缓冲区
 
 		int passedlen = 0;// 记录传输长度
 
@@ -152,58 +146,18 @@ public class ConfigReceiver extends Thread {
 	}
 
 	/**
-	 * 将接收并保存的配置文件用jackson解析为ConfigData相应属性赋值
+	 * 将接收并保存的配置文件解析为ConfigData
 	 */
-	public void processConfig() {
-
-		String topoString = "";
-		JSONObject jObject = null;
-		this.configData = new ConfigData();
-
+	public void processConfig(){
 		locker.lock();
-		// System.out.println("processConfig  Lock");
 		try {
-
-			BufferedReader br = new BufferedReader(new FileReader(savePath));
-			String r = br.readLine();
-
-			while (r != null) {
-				topoString += r;
-				r = br.readLine();
-			}
-			br.close();
-
-			jObject = new JSONObject(topoString);
-
-			String strTemp = jObject.getString("globalAnalysisIP");
-			this.configData.setGlobalAnalysisIP(strTemp);
-
-			int intTemp = jObject.getInt("globalAnalysisPort");
-			this.configData.setGlobalAnalysisPort(intTemp);
-
-			intTemp = jObject.getInt("interval");
-			this.configData.setInterval(intTemp);
-
-			intTemp = jObject.getInt("topN");
-			this.configData.setTopN(intTemp);
-
-			intTemp = jObject.getInt("inAdvance");
-			this.configData.setInAdvance(intTemp);
-
-			strTemp = jObject.getString("protocol");
-			this.configData.setProtocol(strTemp);
-
-			condition.signalAll();// 发送信号唤醒等待
-
-		} catch (JSONException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
+				this.configData = FileProcesser.readConfigData(SAVE_PATH);// 调用处理config文件函数 写在FileProcesser里
+				condition.signalAll();// 发送信号唤醒等待
 		} finally {
 			locker.unlock();
 		}
 	}
-
+		
 	/**
 	 * @return Returns the
 	 *         configData.如果configData这时候被锁了，就会阻塞调用getConfigData的函数，直到这个锁被unlock为止

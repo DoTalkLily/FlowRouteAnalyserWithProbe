@@ -13,24 +13,20 @@
 package ict.analyser.config;
 
 /**
- * 
+ * {"protocol":"ospf","interval":2,"topN":10,"globalAnalysisIP":"127.0.0.1",
+ * "inAdvance":8,"globalAnalysisPort":33399,"samplingRate":3000}
  * 
  * @author 25hours
  * @version 1.0, 2012-10-15
  */
 public class ConfigData {
-
-	private String globalAnalysisIP = null;// 综合分析接收结果的ip
-
-	private int globalAnalysisPort = 0;// 综合分析接收结果的端口号
-
-	private int interval = 15;// 周期
-
 	private int topN = 10;// topN
-
-	private int inAdvance = 20;
-
+	private int interval = 15;// 周期
+	private int inAdvance = 20;// 提前分析路径时间
+	private int samplingRate = 1;// 采样比
+	private int globalAnalysisPort = 0;// 综合分析接收结果的端口号
 	private String protocol = "ospf";// 协议类型
+	private String globalAnalysisIP = null;// 综合分析接收结果的ip
 
 	/**
 	 * @return Returns the globalAnalysisIP.
@@ -120,6 +116,21 @@ public class ConfigData {
 	 */
 	public void setProtocol(String protocol) {
 		this.protocol = protocol;
+	}
+
+	/**
+	 * @return Returns the samplingRate.
+	 */
+	public int getSamplingRate() {
+		return samplingRate;
+	}
+
+	/**
+	 * @param samplingRate
+	 *            The samplingRate to set.
+	 */
+	public void setSamplingRate(int samplingRate) {
+		this.samplingRate = samplingRate;
 	}
 
 }

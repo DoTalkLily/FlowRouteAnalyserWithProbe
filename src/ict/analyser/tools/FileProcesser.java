@@ -7,6 +7,7 @@
 
 package ict.analyser.tools;
 
+import ict.analyser.config.ConfigData;
 import ict.analyser.flow.TrafficLink;
 import ict.analyser.isistopo.IsisRouter;
 import ict.analyser.isistopo.IsisTopo;
@@ -38,6 +39,49 @@ public class FileProcesser {
 	private long pid = 0;
 	private boolean isTopoChanged = true;// 标记本周期拓扑是否发生改变
 	private Logger logger = Logger.getLogger(FileProcesser.class.getName());// 注册一个logger
+
+	public static ConfigData readConfigData(String filePath) {
+		String topoString = "";
+		JSONObject jObject = null;
+		ConfigData configData = new ConfigData();
+
+		try {
+			BufferedReader br = new BufferedReader(new FileReader(filePath));
+			String r = br.readLine();
+
+			while (r != null) {
+				topoString += r;
+				r = br.readLine();
+			}
+			br.close();
+
+			jObject = new JSONObject(topoString);
+			int topN = jObject.getInt("topN");
+			int interval = jObject.getInt("interval");
+			int inAdvance = jObject.getInt("inAdvance");
+			int samplingRate = jObject.getInt("samplingRate");
+			int globalAnalysisPort = jObject.getInt("globalAnalysisPort");
+			String protocal = jObject.getString("protocol");
+			String globalAnalysisIP = jObject.getString("globalAnalysisIP");
+
+			if (protocal != null && interval > 1 && globalAnalysisIP != null
+					&& globalAnalysisPort > 0 && inAdvance > 0 && topN > 0
+					&& samplingRate > 0) {
+				configData.setTopN(topN);
+				configData.setInterval(interval);
+				configData.setProtocol(protocal);
+				configData.setInAdvance(inAdvance);
+				configData.setSamplingRate(samplingRate);
+				configData.setGlobalAnalysisIP(globalAnalysisIP);
+				configData.setGlobalAnalysisPort(globalAnalysisPort);
+			}
+		} catch (JSONException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return configData;
+	}
 
 	// parameters:
 	// The location of JSON file
@@ -310,8 +354,6 @@ public class FileProcesser {
 				return null;
 			}
 
-			topo.setAreaId(areaId);
-
 			JSONObject jTopo = jObject.getJSONObject("Topo");
 			this.pid = jTopo.getLong("pid");
 			topo.setPeriodId(this.pid);
@@ -537,9 +579,9 @@ public class FileProcesser {
 
 	// 20130506 modified by lili
 	public String writeResult(HashMap<Integer, TrafficLink> mapLidTlink,
-			int interval, long pid) {
+			int interval) {
 
-		String path = "TrafficTopoResult_" + pid + ".json";
+		String path = "TrafficTopoResult_" + this.pid + ".json";
 		FileWriter fw = null;
 		PrintWriter pw = null;
 		// 遍历hashmap实例代码：

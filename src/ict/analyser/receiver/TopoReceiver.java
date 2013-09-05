@@ -36,47 +36,26 @@ import java.util.logging.Logger;
 public class TopoReceiver extends Thread {
 
 	private static int port = 2012;// 端口号(待定)
-
 	private static int bufferSize = 50 * 1024;// 缓冲区大小
-
-	private boolean topoReady = false;// 信号，说明topo数据是否解析完毕
-
 	private boolean signal = false;// 第一个周期开始接收文件时发送给主线程的signal
-
+	private boolean isTopoChanged = true;// 判断拓扑是否发生改变
 	private Socket client = null;// 保存接收到连接的socket
-
 	private Lock topoLocker = null;// 为topo数据加锁
-
-	private Lock signalLocker = null;// 为信号加锁
-
 	private String protocol = null;// 协议类型
-
+	private Lock signalLocker = null;// 为信号加锁
 	private IsisTopo isisTopo = null;// 保存解析得到的ospfTopo文件
-
 	private OspfTopo ospfTopo = null;// 保存解析得到的ospfTopo文件
-
 	private PrintWriter writer = null;// 输出流
-
 	private ServerSocket server = null;// 服务器socket
-
 	private ConfigData configData = null;// 保存解析后得到的配置信息的类，主分析进程将读取
-
 	private DataInputStream fileIn = null;// 输入流
-
 	private MainProcesser processer = null;// 主分析类
-
 	private DataOutputStream fileOut = null;// 输出流到本地文件
-
 	private Condition topoCondition = null;// 锁相关：设置等待唤醒，相当于wait/notify
-
 	private Condition signalCondition = null;// 锁相关：设置等待唤醒，相当于wait/notify
-
 	private String ospfPath = "ospf_topo.json";// 接收到的文件保存到的路径本地(待定)
-
 	private String isisPath = "isis_topo.json";// 接收到的文件保存到的路径本地(待定)
-
 	private FileProcesser fileProcesser = null;// 解析topo文件类
-
 	private Logger logger = Logger.getLogger(TopoReceiver.class.getName());// 注册一个logger
 
 	public TopoReceiver(MainProcesser processer) {
@@ -123,7 +102,7 @@ public class TopoReceiver extends Thread {
 	private void initAConnect() throws IOException {
 		this.client = server.accept();
 
-		if (this.client != null) {// 如果接收到连接，说明可以开始下一个周期的分析，发送信号给主线程
+		if (this.client != null) {// 如果接收到连接，说明可以开始下一个周期的分析，更改本地接受到拓扑文件的信号
 			sendSignal();
 		} else {
 			return;
@@ -206,7 +185,7 @@ public class TopoReceiver extends Thread {
 		topoLocker.lock();
 
 		try {
-			// 调用处理topo文件函数!!!!写在FileProcesser里
+			// 调用处理topo文件函数 写在FileProcesser里
 			if (this.protocol.equalsIgnoreCase("ospf")) {
 				OspfTopo newTopo = fileProcesser.readOspfTopo(this.ospfPath);
 
@@ -280,10 +259,7 @@ public class TopoReceiver extends Thread {
 	public IsisTopo getIsisTopo() {
 		topoLocker.lock(); // 加锁
 		try {
-			if (this.isisTopo == null) {// 如果没解析完成
-				topoCondition.await();// 等待
-			}
-
+			topoCondition.await();// 等待
 			return this.isisTopo;
 		} catch (InterruptedException e) {
 			e.printStackTrace();
@@ -316,4 +292,12 @@ public class TopoReceiver extends Thread {
 			this.signalLocker.unlock();
 		}
 	}
+
+	/**
+	 * @return Returns the isTopoChanged.
+	 */
+	public boolean isTopoChanged() {
+		return isTopoChanged;
+	}
+
 }

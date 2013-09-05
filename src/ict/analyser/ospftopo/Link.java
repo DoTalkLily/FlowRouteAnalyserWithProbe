@@ -17,8 +17,6 @@ public class Link {
 
 	private int metric = 0;// 链路上的 cost值
 
-	private long totalBytes = 0;// 链路上的总flow大小包括四种类型的流
-
 	private String area = null;// 本链路所属area，也可理解为本接口所属area
 
 	private long myId = 0;// 本设备id
@@ -28,8 +26,6 @@ public class Link {
 	private long neighborId = 0;// 邻居设备id
 
 	private long myInterIp = 0;// 本设备接口ip
-
-	// private ArrayList<Flow> flows = new ArrayList<Flow>();// 经过这条链路的全部流
 
 	/**
 	 * @return Returns the linkId.
@@ -69,13 +65,6 @@ public class Link {
 	}
 
 	/**
-	 * @return Returns the totalBytes.
-	 */
-	public long getTotalBytes() {
-		return totalBytes;
-	}
-
-	/**
 	 * @return Returns the mask.
 	 */
 	public long getMask() {
@@ -88,14 +77,6 @@ public class Link {
 	 */
 	public void setMask(long mask) {
 		this.mask = mask;
-	}
-
-	/**
-	 * @param totalBytes
-	 *            The totalBytes to set.
-	 */
-	public void setTotalBytes(long totalBytes) {
-		this.totalBytes += totalBytes;
 	}
 
 	/**

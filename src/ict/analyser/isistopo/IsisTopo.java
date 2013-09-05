@@ -17,6 +17,9 @@ import ict.analyser.tools.IPTranslator;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Map.Entry;
 
 /**
  * 
@@ -25,32 +28,20 @@ import java.util.HashMap;
  * @version 1.0, 2012-10-18
  */
 public class IsisTopo {
-
-	private String areaId = null;
-
-	private long periodId = 0;
-
+	private long periodId = 0;// 周期id
 	private int networkType = 0;// 判断是level2——2 还是level1——1
-
 	private ArrayList<Long> asbrIdList = null;// 保存全部的l1/l2路由器id
-
+	private ArrayList<Long> allRouterIds = null;// 保存全网路由器id列表
 	private HashMap<Long, Long> mapBrIpId = null;// ASBR的接口ip(long)——设备id
-
-	private HashMap<Long, String> mapLongStrId = null;// long型id——string型id映射
-														// 调试使用
-
 	private HashMap<Long, Long> mapIpRouterId = null;// 全部路由器ip地址和router id映射
-
+	private HashMap<Long, String> mapLongStrId = null;// long型id——string型id映射
 	private HashMap<Long, IsisRouter> mapIdRouter = null;// router id ——router映射
-
 	private HashMap<Long, Long> mapPrefixRouterId = null;// 拓扑中前缀与路由器id对应的映射,用于根据prefix查找路由器id
-
-	private HashMap<Long, ArrayList<Reachability>> mapPrefixReach = null;
-
-	private HashMap<Integer, TrafficLink> mapLidTlink = null;// link id ——
-																// TrafficLink
+	private HashMap<Integer, TrafficLink> mapLidTlink = null;// linkid——TrafficLink
+	private HashMap<Long, ArrayList<Reachability>> mapPrefixReach = null;// 前缀——可达性对象映射
 
 	public IsisTopo() {
+		this.allRouterIds = new ArrayList<Long>();
 		this.mapBrIpId = new HashMap<Long, Long>();
 		this.mapIpRouterId = new HashMap<Long, Long>();
 		this.mapLongStrId = new HashMap<Long, String>();
@@ -82,6 +73,31 @@ public class IsisTopo {
 		// // + IPTranslator.calLongToIp(rid));
 		// }
 		this.mapPrefixRouterId.put(prefix, rid);
+	}
+
+	/**
+	 * 每周期结束清空map id——traffic对应的traffic信息
+	 */
+	public void resetTrafficData() {
+		if (this.mapLidTlink == null) {
+			return;
+		}
+
+		TrafficLink link = null;
+		Map.Entry<Integer, TrafficLink> entry = null;
+		Iterator<Entry<Integer, TrafficLink>> iter = this.mapLidTlink
+				.entrySet().iterator();
+
+		while (iter.hasNext()) {
+			entry = iter.next();
+			link = entry.getValue();
+
+			if (link == null) {
+				continue;
+			}
+
+			link.resetValues();
+		}
 	}
 
 	public void setMapIpRouter(long ip, long routerId) {
@@ -264,26 +280,24 @@ public class IsisTopo {
 	 *            The mapIdRouter to set.
 	 */
 	public void setMapIdRouter(long rid, IsisRouter router) {
+		if (rid == 0 || router == null) {
+			return;
+		}
+
 		this.mapIdRouter.put(rid, router);
+		this.allRouterIds.add(rid);
 	}
 
 	public void setMapBrIpId(long ip, long id) {
 		this.mapBrIpId.put(ip, id);
 	}
 
-	// /**
-	// * @return Returns the mapASBRipId.
-	// */
-	// public HashMap<Long, Long> getMapASBRipId() {
-	// return mapBrIpId;
-	// }
-
 	public void setMapLidTraffic(int id) {
 		if (id == 0) {
 			return;
 		}
 
-		TrafficLink link = new TrafficLink();
+		TrafficLink link = new TrafficLink(id);
 		this.mapLidTlink.put(id, link);
 	}
 
@@ -292,21 +306,6 @@ public class IsisTopo {
 	 */
 	public HashMap<Integer, TrafficLink> getMapLidTlink() {
 		return mapLidTlink;
-	}
-
-	/**
-	 * @return Returns the areaId.
-	 */
-	public String getAreaId() {
-		return areaId;
-	}
-
-	/**
-	 * @param areaId
-	 *            The areaId to set.
-	 */
-	public void setAreaId(String areaId) {
-		this.areaId = areaId;
 	}
 
 	/**
@@ -323,20 +322,6 @@ public class IsisTopo {
 	public void setPeriodId(long pid) {
 		this.periodId = pid;
 	}
-
-	// /**
-	// *
-	// *
-	// * @param nexthop
-	// * @return
-	// */
-	// public long getRidByNextHop(long nexthop) {
-	// Object obj = this.mapIpRouterId.get(nexthop);
-	// if (obj == null) {
-	// return 0;
-	// }
-	// return (Long) obj;
-	// }
 
 	/**
 	 * @return Returns the networkType.
@@ -378,4 +363,21 @@ public class IsisTopo {
 		}
 	}
 
+	/*
+	 * 返回拓扑中路由器数量
+	 */
+	public int getRouterCount() {
+		if (this.allRouterIds == null) {
+			return 0;
+		}
+
+		return this.allRouterIds.size();
+	}
+
+	/*
+	 * 返回全网路由器id列表
+	 */
+	public ArrayList<Long> getAllRouterIds() {
+		return this.allRouterIds;
+	}
 }

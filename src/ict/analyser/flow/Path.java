@@ -18,15 +18,11 @@ import java.util.ArrayList;
  * @version 1.0, 2012-10-30
  */
 public class Path {
-
 	private long srcRouterId = 0;// 源路由器
-
+	private long dstRouterId = 0;// 目的路由器
 	private long srcInterface = 0;// 终端连接的第一条路由器接口prefix
-
 	private long dstInterface = 0;// 路径在本as内的最后一个路由器接口prefix
-
 	private int totalCost = Integer.MAX_VALUE;// 整条路径的总cost
-
 	private ArrayList<Link> links = null;// 域内netflow所经过的所哟link,暂未使用，等链路需要精确到接口级别的时候再使用
 
 	public Path() {
@@ -105,11 +101,11 @@ public class Path {
 		// System.out.println("links size:" + size);
 		return routerIds;
 	}
-	
+
 	public ArrayList<Long> getPathInIsisIpFormat() {
 		ArrayList<Long> ids = new ArrayList<Long>();
-		
-		long myId =0;
+
+		long myId = 0;
 		long neighborId = 0;
 		Link link = null;
 
@@ -127,8 +123,8 @@ public class Path {
 
 			for (int i = 1; i < size; i++) {
 				link = this.links.get(i);
-				neighborId =link.getNeighborId();
-				
+				neighborId = link.getNeighborId();
+
 				if (neighborId != 0) {
 					ids.add(neighborId);
 				}
@@ -284,4 +280,33 @@ public class Path {
 		this.srcRouterId = srcRouter;
 	}
 
+	/**
+	 * @return Returns the srcRouterId.
+	 */
+	public long getSrcRouterId() {
+		return srcRouterId;
+	}
+
+	/**
+	 * @param srcRouterId
+	 *            The srcRouterId to set.
+	 */
+	public void setSrcRouterId(long srcRouterId) {
+		this.srcRouterId = srcRouterId;
+	}
+
+	/**
+	 * @return Returns the dstRouterId.
+	 */
+	public long getDstRouterId() {
+		return dstRouterId;
+	}
+
+	/**
+	 * @param dstRouterId
+	 *            The dstRouterId to set.
+	 */
+	public void setDstRouterId(long dstRouterId) {
+		this.dstRouterId = dstRouterId;
+	}
 }
