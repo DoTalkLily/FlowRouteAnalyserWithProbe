@@ -12,7 +12,7 @@ import ict.analyser.flow.TrafficLink;
 import ict.analyser.isistopo.IsisRouter;
 import ict.analyser.isistopo.IsisTopo;
 import ict.analyser.isistopo.Reachability;
-import ict.analyser.ospftopo.AsExternalLSA;
+import ict.analyser.ospftopo.BgpItem;
 import ict.analyser.ospftopo.InterAsLink;
 import ict.analyser.ospftopo.Link;
 import ict.analyser.ospftopo.OspfRouter;
@@ -37,6 +37,7 @@ import org.json.JSONObject;
 
 public class FileProcesser {
 	private long pid = 0;
+	private boolean isBgpChanged = true;// 标记本周期bgp信息是否发生改变
 	private boolean isTopoChanged = true;// 标记本周期拓扑是否发生改变
 	private Logger logger = Logger.getLogger(FileProcesser.class.getName());// 注册一个logger
 
@@ -86,28 +87,11 @@ public class FileProcesser {
 	// parameters:
 	// The location of JSON file
 	public OspfTopo readOspfTopo(String filePath) {
-
+		this.isBgpChanged = true;// 默认bgp信息发生改变
 		this.isTopoChanged = true;// 默认拓扑发生改变
 
-		long ip = 0;
-		long rid = 0;
-		int size = 0;
-		int linkId = 0;
-		int metric = 0;
-		long prefix = 0;
-		int asNumber = 0;
-		long nAsNumber = 0;
-		int neighborSize = 0;
-		Link link = null;
-		String area = null;
-		String mask = null;
 		String topoString = "";
-		String routerId = null;
-		String nRouterId = null;
-		OspfRouter router = null;
-		String interfaceIP = null;
 		JSONObject jObject = null;
-		OspfTopo topo = new OspfTopo();
 
 		try {
 			// 将topo文件内容读入赋值给字符串
@@ -121,21 +105,57 @@ public class FileProcesser {
 
 			br.close();
 			jObject = new JSONObject(topoString);
+			// pid
+			this.pid = jObject.getLong("pid");
+
 			// 解析开始
 			if (!jObject.has("Topo")) {// 如果拓扑没发生变化——通过判断是否有“topo”key来判断本周期拓扑数据是否发生变化
-				this.pid = jObject.getLong("pid");
 				this.isTopoChanged = false;
-				logger.info("pid:" + pid);
-				return null;
+				logger.info("topo not changed ! pid:" + pid);
+			} else {
+				processTopo(jObject);
 			}
+
+			if (!jObject.has("BGP")) {
+				this.isBgpChanged = false;
+				logger.info("bgp not changed!pid:" + pid);
+			} else {
+				processBgp(jObject);
+			}
+
+		} catch (IOException e) {
+			e.printStackTrace();
+		} catch (JSONException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public void processTopo(JSONObject jObject) {
+		long ip = 0;
+		long rid = 0;
+		int size = 0;
+		int linkId = 0;
+		int metric = 0;
+		long prefix = 0;
+		int asNumber = 0;
+		long nAsNumber = 0;
+		int neighborSize = 0;
+		Link link = null;
+		String area = null;
+		String mask = null;
+		String routerId = null;
+		String nRouterId = null;
+		OspfRouter router = null;
+		String interfaceIP = null;
+		OspfTopo topo = new OspfTopo();
+		// pid
+		topo.setPeriodId(this.pid);
+		try {
 			// asNumber
 			asNumber = jObject.getInt("asNumber");
 			topo.setAsNumber(asNumber); // asNumber
 			// topo
 			JSONObject topoObj = jObject.getJSONObject("Topo");
-			// pid
-			this.pid = topoObj.getLong("pid");
-			topo.setPeriodId(pid);
 			// nodes
 			JSONArray nodes = topoObj.getJSONArray("nodes");
 			size = nodes.length();
@@ -173,14 +193,6 @@ public class FileProcesser {
 						router.setLink(link);
 						topo.setMapLidTraffic(linkId);
 						topo.setMapIpRouterid(ip, rid);// 添加到保存as内路由器ip——rid映射中
-						// System.out.println("ip:" +
-						// IPTranslator.calLongToIp(ip)
-						// + "  id:" + IPTranslator.calLongToIp(rid));
-						// System.out.println("aaaaaaaa router id:"+routerId+"  neighbor id:"+
-						// nRouterId+"  neighbor ip:" +
-						// interfaceIP
-						// + " mask :" + mask);
-
 					}
 				}
 				topo.setRidRouter(rid, router);
@@ -196,9 +208,6 @@ public class FileProcesser {
 				if (routerId != null && prefix != 0 && mask != null) {
 					topo.setMapPrefixRouterId(prefix,
 							IPTranslator.calIPtoLong(routerId));
-					// System.out.println("prefix:"
-					// + IPTranslator.calLongToIp(prefix) + "  router id"
-					// + routerId);
 				}
 			}
 			// asbr
@@ -262,46 +271,39 @@ public class FileProcesser {
 					topo.setMapASBRIpLinkId(interLink.getNeighborBrIp(), linkId);
 				}
 			}
-
-			// asExternalLSA
-			int externalType = 2;
-			String nexthop = null;
-			String prefixStr = null;
-			AsExternalLSA asExternalLsa = null;
-			JSONArray asExternalArr = jObject.getJSONArray("asExternalLSA");
-			size = asExternalArr.length();
-
-			for (int j = 0; j < size; j++) {
-				JSONObject asExternalObj = asExternalArr.getJSONObject(j);
-				asExternalLsa = new AsExternalLSA();
-				routerId = asExternalObj.getString("advRouter");
-				prefixStr = asExternalObj.getString("linkStateId");
-				mask = asExternalObj.getString("networkMask");
-				externalType = asExternalObj.getInt("externalType");
-				metric = asExternalObj.getInt("metric");
-				nexthop = asExternalObj.getString("forwardingAddress");
-				if (routerId != null && prefixStr != null && mask != null
-						&& externalType != 0 && nexthop != null) {
-					asExternalLsa.setAdvRouter(IPTranslator
-							.calIPtoLong(routerId)); // advRouter
-					asExternalLsa.setLinkStateId(IPTranslator
-							.calIPtoLong(prefixStr)); // linkStateId
-					asExternalLsa
-							.setNetworkMask(IPTranslator.calIPtoLong(mask)); // networkMask
-					asExternalLsa.setExternalType(externalType); // externalType
-					asExternalLsa.setMetric(metric); // metric
-					asExternalLsa.setForwardingAddress(IPTranslator
-							.calIPtoLong(nexthop)); // forwardingAddress
-					topo.addAsExternalLSA(asExternalLsa);
-				}
-			}
-
-		} catch (IOException e) {
-			e.printStackTrace();
 		} catch (JSONException e) {
 			e.printStackTrace();
 		}
-		return topo;
+	}
+
+	public void processBgp(JSONObject jObject) {
+		int len = 0;
+		int metric = 0;
+		String prefix = null;
+		String nextHop = null;
+		int localPreference = 0;
+		ArrayList<Integer> asPath = null;
+
+		try {
+			// BGP
+			JSONArray bgpObj = jObject.getJSONArray("BGP");
+			int size = bgpObj.length();
+			BgpItem item = null;
+			JSONObject node = null;
+			JSONArray pathArr = null;
+
+			for (int i = 0; i < size; i++) {
+				node = bgpObj.getJSONObject(i);
+				prefix = node.getString("prefix");
+				len = node.getInt("length");
+				nextHop = node.getString("nexthop");
+				localPreference = node.getInt("localPreference");
+				metric = node.getInt("metric");
+
+			}
+		} catch (JSONException e) {
+			e.printStackTrace();
+		}
 	}
 
 	public IsisTopo readIsisTopo(String filePath) {
