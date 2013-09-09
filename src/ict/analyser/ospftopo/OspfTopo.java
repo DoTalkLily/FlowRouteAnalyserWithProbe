@@ -35,7 +35,7 @@ public class OspfTopo {
 	private HashMap<Long, Integer> mapASBRIpLinkid = null;// ASBR路由器开启监听netflow接口的ip地址和linkid
 	private HashMap<Long, OspfRouter> mapRidRouter = null;// 路由器id——Router映射
 	private HashMap<Integer, TrafficLink> mapLidTlink = null;// linkid——TrafficLink
-	private HashMap<Long, ArrayList<AsExternalLSA>> mapExternallsa = null;// 网络号（即网络前缀）——ArrayList<AsExternalLSA>映射，这个结构不放在area类原因是它设计到as级的路由器id查找
+	private HashMap<Long, ArrayList<BgpItem>> mapPrefixBgpItem = null;// prefix和宣告这个prefix的bgp报文列表映射
 	private Logger logger = Logger.getLogger(OspfTopo.class.getName());// 注册一个logger
 
 	public OspfTopo() {
@@ -49,7 +49,6 @@ public class OspfTopo {
 		this.mapRidRouter = new HashMap<Long, OspfRouter>();
 		this.mapLidTlink = new HashMap<Integer, TrafficLink>();
 		this.mapASBRIpLinkid = new HashMap<Long, Integer>();
-		this.mapExternallsa = new HashMap<Long, ArrayList<AsExternalLSA>>();
 	}
 
 	public void setMapASBRIpLinkId(long ip, int linkid) {
@@ -117,55 +116,6 @@ public class OspfTopo {
 	 */
 	public HashMap<Long, Long> getMapASBRipId() {
 		return mapASBRipId;
-	}
-
-	/**
-	 * 向保存prefix——asbr external lsa映射中添加条目
-	 * 
-	 * @param asExternalLSA
-	 *            要添加的对象
-	 */
-	public void addAsExternalLSA(AsExternalLSA asExternalLSA) {
-		// 如果参数中宣告的prefix已经在映射中了
-		ArrayList<AsExternalLSA> tempList = this.mapExternallsa
-				.get(asExternalLSA.getLinkStateId());
-		if (tempList != null) {
-			// 加入到列表中
-			for (AsExternalLSA tempLsa : tempList) {
-				// 这里是为了添加更新lsa准备的，新的lsa到了，就会删除，这里不会有性能问题，因为list size应该很小
-				if (tempLsa.getAdvRouter() == asExternalLSA.getAdvRouter()) {
-					tempList.remove(tempLsa);
-					tempList.add(asExternalLSA);
-					return;
-				}
-			}
-			tempList.add(asExternalLSA);
-		} else {
-			// 否则新建一个列表，并加入映射中
-			ArrayList<AsExternalLSA> lsaList = new ArrayList<AsExternalLSA>();
-			lsaList.add(asExternalLSA);
-			this.mapExternallsa.put(asExternalLSA.getLinkStateId(), lsaList);
-		}
-	}
-
-	/**
-	 * 根据更新信息从映射中删除对应entry
-	 * 
-	 * @param prefix
-	 *            网络前缀
-	 * @param routerId
-	 *            设备id
-	 */
-	public void deleteExternalLSA(long prefix, long routerId) {
-		ArrayList<AsExternalLSA> tempList = this.mapExternallsa.get(prefix);
-		if (tempList != null) {
-			// 遍历列表，找到与参数id相同的lsa，删除
-			for (AsExternalLSA tempLsa : tempList) {
-				if (tempLsa.getAdvRouter() == routerId) {
-					tempList.remove(tempLsa);
-				}
-			}
-		}
 	}
 
 	public OspfRouter getRouterById(long routerId) {
@@ -522,10 +472,27 @@ public class OspfTopo {
 	}
 
 	/**
-	 * @return Returns the mapExternallsa.
+	 * @return Returns the mapPrefixBgpItem.
 	 */
-	public HashMap<Long, ArrayList<AsExternalLSA>> getMapExternallsa() {
-		return mapExternallsa;
+	public HashMap<Long, ArrayList<BgpItem>> getMapPrefixBgpItem() {
+		return mapPrefixBgpItem;
+	}
+
+	/**
+	 * @param mapPrefixBgpItem
+	 *            The mapPrefixBgpItem to set.
+	 */
+	public void setMapPrefixBgpItem(long prefix, BgpItem item) {
+		if (prefix > 0 && item != null) {
+			ArrayList<BgpItem> found = this.mapPrefixBgpItem.get(prefix);
+			if (found == null) {
+				found = new ArrayList<BgpItem>();
+				found.add(item);
+				this.mapPrefixBgpItem.put(prefix, found);
+			} else {
+				found.add(item);
+			}
+		}
 	}
 
 	/**

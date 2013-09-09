@@ -9,20 +9,38 @@ package ict.analyser.ospftopo;
 import java.util.ArrayList;
 
 /**
+ * 1.Prefer the path with the highest WEIGHT.
  * 
- * "prefix": "10.21.3.0", "length": 23, "nexthop": "23.1.3.23",
- * "localPreference": 10, "metric": 100, "aspath": [ 12, 23, 44 ]
+ * 2.Prefer the path with the highestLOCAL_PREF.
+ * 
+ * 3. Prefer the path that was locally originated via a network or aggregate BGP
+ * subcommand or through redistribution from an IGP.nexthop=0.0.0.0 的
+ * ，这里不考虑as内部路由
+ * 
+ * 4. Prefer the path with the shortest AS_PATH.
+ * 
+ * 5. Prefer the path with the lowest origin type.
+ * 
+ * 0 I 对于产生它的AS是内部的
+ * 
+ * 1 E 来自外部网关协议（EGP）
+ * 
+ * 2 ? 是通过其他方法学习到的，绝大多数 情况下，它是从其他某种协议重新发布的
+ * 
+ * 6. Prefer the path with the lowest multi-exit discriminator (MED).
  * 
  * @author Lily
  * @version 1.0, 2013-9-6
  */
 public class BgpItem {
-	private int length = 0;
-	private int metric = 0;
-	private long prefix = 0;
-	private long nextHop = 0;
-	private int localProference = 0;
-	private ArrayList<Integer> asPath = null;
+	private int origin = 0;// origin属性
+	private int weight = 0;// cisco 专用越大越优先
+	private int length = 0;// mask中1的个数
+	private long metric = 0;// 可能会有 4,294,967,294. 越小越优先
+	private long prefix = 0;// 宣告前缀
+	private long nextHop = 0;// 下一跳地址
+	private int localProference = 0;// 本地优先级属性
+	private ArrayList<Integer> asPath = null;// as path属性
 
 	/**
 	 * @return Returns the length.
@@ -42,7 +60,7 @@ public class BgpItem {
 	/**
 	 * @return Returns the metric.
 	 */
-	public int getMetric() {
+	public long getMetric() {
 		return metric;
 	}
 
@@ -112,6 +130,44 @@ public class BgpItem {
 	 */
 	public void setLocalProference(int localProference) {
 		this.localProference = localProference;
+	}
+
+	/**
+	 * @return Returns the origin.
+	 */
+	public int getOrigin() {
+		return origin;
+	}
+
+	/**
+	 * @param origin
+	 *            The origin to set.
+	 */
+	public void setOrigin(int origin) {
+		this.origin = origin;
+	}
+
+	/**
+	 * @return Returns the weight.
+	 */
+	public int getWeight() {
+		return weight;
+	}
+
+	/**
+	 * @param weight
+	 *            The weight to set.
+	 */
+	public void setWeight(int weight) {
+		this.weight = weight;
+	}
+
+	/**
+	 * @param metric
+	 *            The metric to set.
+	 */
+	public void setMetric(long metric) {
+		this.metric = metric;
 	}
 
 }

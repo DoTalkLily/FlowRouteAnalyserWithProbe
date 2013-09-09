@@ -107,20 +107,22 @@ public class FileProcesser {
 			jObject = new JSONObject(topoString);
 			// pid
 			this.pid = jObject.getLong("pid");
-
+			OspfTopo topo = null;
 			// 解析开始
 			if (!jObject.has("Topo")) {// 如果拓扑没发生变化——通过判断是否有“topo”key来判断本周期拓扑数据是否发生变化
 				this.isTopoChanged = false;
 				logger.info("topo not changed ! pid:" + pid);
 			} else {
-				processTopo(jObject);
+				topo = processTopo(jObject);
 			}
+
+			HashMap<Long, ArrayList<BgpItem>> mapPrefixBgpItem = null;
 
 			if (!jObject.has("BGP")) {
 				this.isBgpChanged = false;
 				logger.info("bgp not changed!pid:" + pid);
 			} else {
-				processBgp(jObject);
+				mapPrefixBgpItem = processBgp(jObject);
 			}
 
 		} catch (IOException e) {
@@ -130,7 +132,7 @@ public class FileProcesser {
 		}
 	}
 
-	public void processTopo(JSONObject jObject) {
+	public OspfTopo processTopo(JSONObject jObject) {
 		long ip = 0;
 		long rid = 0;
 		int size = 0;
@@ -271,39 +273,117 @@ public class FileProcesser {
 					topo.setMapASBRIpLinkId(interLink.getNeighborBrIp(), linkId);
 				}
 			}
+			return topo;
 		} catch (JSONException e) {
 			e.printStackTrace();
 		}
 	}
 
-	public void processBgp(JSONObject jObject) {
+	public HashMap<Long, BgpItem> processBgp(JSONObject jObject) {
 		int len = 0;
+		int origin = 0;
 		int metric = 0;
+		int weight = 0;
 		String prefix = null;
 		String nextHop = null;
 		int localPreference = 0;
+		long prefixLong = 0l;
 		ArrayList<Integer> asPath = null;
+		BgpItem bgpItem = null;
+		HashMap<Long, BgpItem> mapPrefixBgp = new HashMap<Long, BgpItem>();
 
 		try {
 			// BGP
 			JSONArray bgpObj = jObject.getJSONArray("BGP");
-			int size = bgpObj.length();
+			int asSize = 0;
+			int itemSize = bgpObj.length();
 			BgpItem item = null;
 			JSONObject node = null;
 			JSONArray pathArr = null;
 
-			for (int i = 0; i < size; i++) {
+			for (int i = 0; i < itemSize; i++) {
 				node = bgpObj.getJSONObject(i);
+				nextHop = node.getString("nexthop");
+
+				if (nextHop.equals("0.0.0.0")) {// 如果是as内的路由 则不存储
+					continue;
+				}
+
 				prefix = node.getString("prefix");
 				len = node.getInt("length");
-				nextHop = node.getString("nexthop");
+				weight = node.getInt("weight");
+				origin = node.getInt("origin");
 				localPreference = node.getInt("localPreference");
 				metric = node.getInt("metric");
+				pathArr = node.getJSONArray("aspath");
+				asSize = pathArr.length();
 
+				if (asSize > 0) {
+					asPath = new ArrayList<Integer>();
+
+					for (int j = 0; j < asSize; j++) {
+						asPath.add(pathArr.getInt(j));
+					}
+				}
+
+				if (prefix != null && len >= 0 && nextHop != null
+						&& origin >= 0 && weight >= 0 && localPreference >= 0
+						&& metric >= 0 && asSize > 0) {
+					item = new BgpItem();
+					item.setLength(len);
+					item.setWeight(weight);
+					item.setOrigin(origin);
+					item.setMetric(metric);
+					item.setAsPath(asPath);
+					item.setLocalProference(localPreference);
+					prefixLong = IPTranslator.calIPtoLong(prefix);
+					item.setPrefix(prefixLong);
+					item.setNextHop(IPTranslator.calIPtoLong(nextHop));
+
+					bgpItem = mapPrefixBgp.get(prefixLong);
+
+					if (bgpItem == null) {
+						mapPrefixBgp.put(prefixLong, item);
+					} else {
+						mapPrefixBgp.put(prefixLong,
+								chooseBestRoot(item, bgpItem));// 选最优的插入
+					}
+				}
 			}
+			return mapPrefixBgp;
 		} catch (JSONException e) {
 			e.printStackTrace();
+			return null;
 		}
+	}
+
+	private BgpItem chooseBestRoot(BgpItem item1, BgpItem item2) {
+		if (item1.getWeight() != item2.getWeight()) { // weight
+			return (item1.getWeight() > item2.getWeight()) ? item1 : item2;// 越大越好
+		}
+
+		if (item1.getLocalProference() != item2.getLocalProference()) { // localpreference
+			return (item1.getLocalProference() > item2.getLocalProference()) ? item1
+					: item2;// 越大越好
+		}
+
+		int size1 = item1.getAsPath().size();
+		int size2 = item2.getAsPath().size();
+
+		if (size1 != size2) {// as path size
+			return (size1 > size2) ? item2 : item1;// 越小越好
+		}
+
+		if (item1.getOrigin() != item2.getOrigin()) {// origin
+			return (item1.getOrigin() > item2.getOrigin()) ? item2 : item1;// 越小越好
+		}
+
+		if (item1.getMetric() != item2.getMetric()) {// metric
+			return (item1.getMetric() > item2.getMetric()) ? item2 : item1;// 越小越好
+		}
+
+		// 这里有待扩展…… 13条中7-13条，扩展前，还不能确定唯一一条 就返回第一条
+		return item1;
 	}
 
 	public IsisTopo readIsisTopo(String filePath) {
@@ -654,6 +734,13 @@ public class FileProcesser {
 	 */
 	public boolean isTopoChanged() {
 		return isTopoChanged;
+	}
+
+	/**
+	 * @return Returns the isBgpChanged.
+	 */
+	public boolean isBgpChanged() {
+		return isBgpChanged;
 	}
 
 	/**
