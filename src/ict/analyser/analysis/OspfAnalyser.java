@@ -6,6 +6,7 @@
  */
 package ict.analyser.analysis;
 
+import ict.analyser.common.Constant;
 import ict.analyser.common.Vertex;
 import ict.analyser.database.DBWriter;
 import ict.analyser.flow.Flow;
@@ -104,7 +105,7 @@ public class OspfAnalyser implements Runnable {
 	public void calFlowRoute() {
 		long srcAS = 0;
 		long dstAS = 0;
-		int direction = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
+		int flowDirection = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
 		long srcRouterId = 0;
 		long dstRouterId = 0;
 		long srcInterface = 0;
@@ -121,7 +122,7 @@ public class OspfAnalyser implements Runnable {
 		for (int i = 0; i < flowCount; i++) { // 开始遍历，逐条分析路径
 			// 重置临时变量
 			path = null;
-			direction = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
+			flowDirection = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
 			srcRouterId = 0;
 			dstRouterId = 0;
 			srcInterface = 0;
@@ -135,10 +136,9 @@ public class OspfAnalyser implements Runnable {
 
 			if ((srcAS == 0 && dstAS == 0)
 					|| (srcAS == topoAS && dstAS == topoAS)) {// 如果as都是0
-																// 或者都等于拓扑文件中的as
-																// 则为域内流量
+																// 或者都等于拓扑文件中的as则为域内流量
 				// 如果源和目的设备所在的as号和当前as号相同，是域内flow
-				direction = Flow.INTERNAL;// 标记为inbound
+				flowDirection = Constant.INTERNAL_FLOW;// 标记为inbound
 				idInter = getRId(netflow.getSrcAddr(), netflow.getSrcMask());
 
 				if (idInter == null) {
@@ -223,7 +223,7 @@ public class OspfAnalyser implements Runnable {
 			} else if ((srcAS == topoAS && dstAS != topoAS)
 					|| (srcAS == 0 && dstAS != 0)) {// outboundflow
 
-				direction = Flow.OUTBOUND;
+				flowDirection = Constant.OUTBOUND_FLOW;
 				idInter = getRId(netflow.getSrcAddr(), netflow.getSrcMask());
 
 				if (idInter == null) {
@@ -275,7 +275,7 @@ public class OspfAnalyser implements Runnable {
 			} else if ((srcAS != topoAS && dstAS == topoAS)
 					|| (srcAS != 0 && dstAS == 0)) {// inboundflow
 
-				direction = Flow.INBOUND;
+				flowDirection = Constant.INBOUND_FLOW;
 				idInter = getRId(netflow.getDstAddr(), netflow.getDstMask());
 
 				if (idInter == null) {
@@ -359,7 +359,7 @@ public class OspfAnalyser implements Runnable {
 				}
 
 			} else {// transitflow
-				direction = Flow.TRANSIT;
+				flowDirection = Constant.TRANSIT_FLOW;
 
 				// 铺域间流量并且返回router id
 				idInter = processInterAsFlow(netflow);
@@ -428,7 +428,7 @@ public class OspfAnalyser implements Runnable {
 			path.setSrcInterface(srcInterface);
 			path.setDstInterface(dstInterface);
 			// 插入流量
-			insertFlow(netflow, path, direction);
+			insertFlow(netflow, path, flowDirection);
 		}// end of for
 			// 所有流量都分析完了
 		sendCompleteSignal();// 通知主线程已经分析完了
@@ -473,20 +473,20 @@ public class OspfAnalyser implements Runnable {
 	}
 
 	private long[] getRId(long ip, byte mask) {
+		long[] result = new long[2];
 		// 这里打了个补丁，如果netflow中的源ip或者目的ip是路由器的接口ip，那么先根据ip地址定位到路由器
-		long[] routerId = this.topo.getRouterInterByIp(ip, mask);
+		long routerId = this.topo.getRouterInterByIp(ip);
 
-		if (routerId == null) {
-			// System.out.println("get router id by prefix:"
-			// + IPTranslator.calLongToIp(ip));
-			routerId = this.topo.getRouterIdByPrefix(ip, mask);// 根据源ip，mask获得源设备id
-			// if (routerId != null)
-			// System.out.println("found!!! prefix:"
-			// + IPTranslator.calLongToIp(ip) + "  rid:"
-			// + IPTranslator.calLongToIp(routerId[0]));
+		if (routerId != 0) {// 是路由器接口发出的流量
+			long dmask = IPTranslator.calByteToLong(mask);
+			long prefix = ip & dmask;
+			result[0] = routerId;
+			result[1] = prefix;
+		} else {
+			result = this.topo.getRouterIdByPrefix(ip, mask);// 根据源ip，mask获得源设备id
 		}
 
-		return routerId;
+		return result;
 	}
 
 	/**

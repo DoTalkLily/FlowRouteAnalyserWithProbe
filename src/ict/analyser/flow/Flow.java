@@ -22,14 +22,6 @@ public class Flow {
 
 	private int direction = 0;
 
-	public final static int INTERNAL = 1;
-
-	public final static int INBOUND = 2;
-
-	public final static int OUTBOUND = 3;
-
-	public final static int TRANSIT = 4;
-
 	private Netflow netflow = null;// flow中包含的netflow对象
 
 	public Flow(long pid, Netflow netflow, Path path, int direction) {

@@ -114,22 +114,38 @@ public class FileProcesser {
 				logger.info("topo not changed ! pid:" + pid);
 			} else {
 				topo = processTopo(jObject);
+
+				if (topo == null) {
+					logger.warning("topo process failed!");
+				}
 			}
 
-			HashMap<Long, ArrayList<BgpItem>> mapPrefixBgpItem = null;
+			HashMap<Long, BgpItem> mapPrefixBgpItem = null;
 
 			if (!jObject.has("BGP")) {
 				this.isBgpChanged = false;
 				logger.info("bgp not changed!pid:" + pid);
 			} else {
 				mapPrefixBgpItem = processBgp(jObject);
+
+				if (mapPrefixBgpItem != null) {
+					if (topo == null) {// 如果拓扑没改变，则只用前缀——bgp条目映射初始化拓扑
+						topo = new OspfTopo(mapPrefixBgpItem);
+					} else { // 拓扑改变，将映射关系赋值给拓扑
+						topo.setMapPrefixBgpItem(mapPrefixBgpItem);
+					}
+				} else {
+					logger.warning("bgp process failed!");
+				}
 			}
 
+			return topo;
 		} catch (IOException e) {
 			e.printStackTrace();
 		} catch (JSONException e) {
 			e.printStackTrace();
 		}
+		return null;
 	}
 
 	public OspfTopo processTopo(JSONObject jObject) {
@@ -277,6 +293,7 @@ public class FileProcesser {
 		} catch (JSONException e) {
 			e.printStackTrace();
 		}
+		return null;
 	}
 
 	public HashMap<Long, BgpItem> processBgp(JSONObject jObject) {
@@ -353,10 +370,13 @@ public class FileProcesser {
 			return mapPrefixBgp;
 		} catch (JSONException e) {
 			e.printStackTrace();
-			return null;
 		}
+		return null;
 	}
 
+	/*
+	 * 如果两个item宣告了到达同一个prefix 根据各种规则选一个最优的
+	 */
 	private BgpItem chooseBestRoot(BgpItem item1, BgpItem item2) {
 		if (item1.getWeight() != item2.getWeight()) { // weight
 			return (item1.getWeight() > item2.getWeight()) ? item1 : item2;// 越大越好

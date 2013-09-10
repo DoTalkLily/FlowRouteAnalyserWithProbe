@@ -13,11 +13,15 @@ package ict.analyser.common;
  * @version 1.0, 2013-8-26
  */
 public class Constant {
-	/*
-	 * 可能遇到的错误定义
-	 */
-	public static boolean DEVICE_DOWN = false;
-	public static boolean TOPO_NOT_RECEIVED = false;
-	public static boolean CONFIG_NOT_RECEIVED = false;
+	public final static int FLOW_ANALYSIS_SUCCESS = 0;
+	public final static int DEVICE_DOWN = 1;
+	public final static int TOPO_NOT_RECEIVED = 2;
+	public final static int FLOW_NOT_RECEIVED = 3;
+	public final static int CONFIG_NOT_RECEIVED = 4;
+	// 流量类型
+	public final static int INTERNAL_FLOW = 1;
+	public final static int INBOUND_FLOW = 2;
+	public final static int OUTBOUND_FLOW = 3;
+	public final static int TRANSIT_FLOW = 4;
 
 }

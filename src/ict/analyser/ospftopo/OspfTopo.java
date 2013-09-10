@@ -34,8 +34,8 @@ public class OspfTopo {
 	private HashMap<Long, Long> mapPrefixRouterId = null;// topo文件中stubs对应的
 	private HashMap<Long, Integer> mapASBRIpLinkid = null;// ASBR路由器开启监听netflow接口的ip地址和linkid
 	private HashMap<Long, OspfRouter> mapRidRouter = null;// 路由器id——Router映射
+	private HashMap<Long, BgpItem> mapPrefixBgpItem = null;// prefix和宣告这个prefix的bgp报文
 	private HashMap<Integer, TrafficLink> mapLidTlink = null;// linkid——TrafficLink
-	private HashMap<Long, ArrayList<BgpItem>> mapPrefixBgpItem = null;// prefix和宣告这个prefix的bgp报文列表映射
 	private Logger logger = Logger.getLogger(OspfTopo.class.getName());// 注册一个logger
 
 	public OspfTopo() {
@@ -49,6 +49,13 @@ public class OspfTopo {
 		this.mapRidRouter = new HashMap<Long, OspfRouter>();
 		this.mapLidTlink = new HashMap<Integer, TrafficLink>();
 		this.mapASBRIpLinkid = new HashMap<Long, Integer>();
+	}
+
+	// 当接受到的拓扑没改变，只是内部的bgp条目改变了，就不初始化其他数据结构，只把映射作为参数传入即可
+	public OspfTopo(HashMap<Long, BgpItem> mapPrefixBgpItem) {
+		if (mapPrefixBgpItem != null) {
+			this.mapPrefixBgpItem = mapPrefixBgpItem;
+		}
 	}
 
 	public void setMapASBRIpLinkId(long ip, int linkid) {
@@ -312,7 +319,6 @@ public class OspfTopo {
 	 * @param mask
 	 * @return 路由器id
 	 */
-	@SuppressWarnings("unchecked")
 	public long[] getRouterIdByPrefix(long ip, byte mask) {
 		long result[] = new long[2];
 		long dmask = IPTranslator.calByteToLong(mask);
@@ -474,7 +480,7 @@ public class OspfTopo {
 	/**
 	 * @return Returns the mapPrefixBgpItem.
 	 */
-	public HashMap<Long, ArrayList<BgpItem>> getMapPrefixBgpItem() {
+	public HashMap<Long, BgpItem> getMapPrefixBgpItem() {
 		return mapPrefixBgpItem;
 	}
 
@@ -482,17 +488,8 @@ public class OspfTopo {
 	 * @param mapPrefixBgpItem
 	 *            The mapPrefixBgpItem to set.
 	 */
-	public void setMapPrefixBgpItem(long prefix, BgpItem item) {
-		if (prefix > 0 && item != null) {
-			ArrayList<BgpItem> found = this.mapPrefixBgpItem.get(prefix);
-			if (found == null) {
-				found = new ArrayList<BgpItem>();
-				found.add(item);
-				this.mapPrefixBgpItem.put(prefix, found);
-			} else {
-				found.add(item);
-			}
-		}
+	public void setMapPrefixBgpItem(HashMap<Long, BgpItem> mapPrefixBgpItem) {
+		this.mapPrefixBgpItem = mapPrefixBgpItem;
 	}
 
 	/**
@@ -574,17 +571,13 @@ public class OspfTopo {
 		return mapIpRouterid;
 	}
 
-	public long[] getRouterInterByIp(long ip, byte mask) {
-		long[] result = new long[2];
-
-		if (this.mapIpRouterid.get(ip) != null) {
-			// long masklong = IPTranslator.calByteToLong(mask);
-			result[0] = this.mapIpRouterid.get(ip);
-			// result[1] = ip & masklong;//20130606 这里应保存接口ip而不是前缀信息
-			result[1] = ip;
-			return result;
+	public long getRouterInterByIp(long ip) {
+		if (ip == 0) {
+			return 0;
 		}
-		return null;
+
+		Object routerId = this.mapIpRouterid.get(ip);
+		return (routerId == null) ? 0 : (Long) routerId;
 	}
 
 	/*

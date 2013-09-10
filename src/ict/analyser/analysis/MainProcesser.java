@@ -5,6 +5,7 @@
  */
 package ict.analyser.analysis;
 
+import ict.analyser.common.Constant;
 import ict.analyser.common.ResultSender;
 import ict.analyser.config.ConfigData;
 import ict.analyser.flow.TrafficLink;
@@ -34,10 +35,10 @@ import java.util.logging.Logger;
  * @version 1.0, 2012-10-21
  */
 public class MainProcesser {
-	static long pid = 0; // 当前所处的周期标识
-	static int topN = 50;// topN
-	static int pidIndex = 1;// 周期索引
-	static int interval = 15;// 配置文件中获得的计算周期单位:min
+	static long PID = 0; // 当前所处的周期标识
+	static int TOPN = 50;// topN
+	static int PID_INDEX = 1;// 周期索引
+	static int INTERVAL = 15;// 配置文件中获得的计算周期单位:min
 	static int DIVIDE_COUNT = 3;// 将所有的netflow报文分成多少份，决定生成多少个线程进行路径分析
 	static int DELAY = 20 * 1000;// 提前接收拓扑的时间，流量接收是时间出发的，从第二周期起，接收到拓扑后的delay秒发送流量请求
 	private Timer timer = null;// 定时器类
@@ -130,7 +131,7 @@ public class MainProcesser {
 			DELAY = advance == 0 ? 20 * 1000 : advance * 1000;
 		}
 
-		if (pidIndex == 1 || !deviceOpend) {// 如果是第一个周期或者硬件段代码没开启成功，再发送开启信号
+		if (PID_INDEX == 1 || !deviceOpend) {// 如果是第一个周期或者硬件段代码没开启成功，再发送开启信号
 			deviceOpend = this.flowReceiver.sendStartSignal();// 第一个周期解析完配置文件之后向流量汇集设备发送开始接收流量的信号
 		}
 
@@ -140,46 +141,47 @@ public class MainProcesser {
 		}
 
 		this.topoReceiver.getTopoSignal();// 开始接收拓扑的信号
-
-		// if (pidIndex == 1) {// 如果 是第一周期并且设备开启成功
-		// this.timer.schedule(flowReceiver, 0);//
-		// 马上开始netflow接收，说明：第一个周期所能分析的流量数量是根据配置文件和第一份拓扑文件接收的时间间隔而定的，如果两者同时接收，那么流量可能为0，进入下一周期。
-		// }
-
 		int newInterval = this.configData.getInterval();// 以分钟为单位，得到分析周期
 
-		if (newInterval != interval) {// 捕获计算时间间隔的改变
+		if (newInterval != INTERVAL) {// 捕获计算时间间隔的改变
 			logger.info("interval changed!");
-			interval = newInterval;
+			INTERVAL = newInterval;
 		}
 
 		this.flowReceiver = null;// 显式释放对象 这里让第一个周期和之后的周期处理方式相同，都要预先计算路径再铺流量
-		this.flowReceiver = new FlowReceiver();// 不能重复schedule统一个对象，所以每周期都新建一个对象，这里用周期执行是不可靠的，由于周期可能会变化
+		this.flowReceiver = new FlowReceiver();// 不能重复schedule同一个对象，所以每周期都新建一个对象，这里用周期执行是不可靠的，由于周期可能会变化
 		this.timer.schedule(flowReceiver, DELAY);
 
-		boolean isSuccess = false;
+		int message = -1;
 
 		if (this.protocol.equalsIgnoreCase("ospf")) {
-			isSuccess = ospfProcess();
+			message = ospfProcess();
 		} else {
-			isSuccess = isisProcess();
+			message = isisProcess();
+		}
+
+		if (message == Constant.TOPO_NOT_RECEIVED) {// 如果拓扑错误，只发送pid给综合分析
+			PID_INDEX++;
+			reportPidToGlobal();
+			return;
+		}
+
+		if (message == Constant.FLOW_NOT_RECEIVED) {// 如果流量为空，只发送拓扑结构给综合分析
+			PID_INDEX++;
+			reportTopoToGlobal();
+			return;
 		}
 
 		// 得到路径分析后的结果链路id——byte映射
 		this.mapLidTlink = this.routeAnalyser.getMapLidTlink();// 得到路径分析后的结果链路id—业务流量映射
-		// 如果拓扑为空，只发送pid
-		if (this.mapLidTlink == null || this.mapLidTlink.size() == 0) {
-			pidIndex++;// 周期索引增加
+
+		if (this.mapLidTlink == null || this.mapLidTlink.size() == 0) {// 如果拓扑对象不为空，但是拓扑上没有链路信息，发送pid给综合分析
+			PID_INDEX++;// 周期索引增加
 			reportPidToGlobal();// 如果拓扑为空，发送pid到综合分析板卡
 			return;
 		}
 
-		if (!isSuccess) { // 流量为空20130506 modified by lili
-			pidIndex++;// 周期索引增加
-			reportTopoToGlobal();// 流量为空，发送topo到综合分析板卡
-			return;
-		}
-
+		// 否则 ，等待统计分析线程结束后，将全部结构发送给综合分析
 		try {
 			this.ipStatisticThread.join();
 		} catch (InterruptedException e) {
@@ -187,18 +189,18 @@ public class MainProcesser {
 		}
 
 		reportAllStaticsToGlobal();// 分析完成，流程完全正确，发送全部数据给综合分析板卡
-		pidIndex++;// 周期索引增加
+		PID_INDEX++;// 周期索引增加
 	}
 
-	public boolean isisProcess() {
+	public int isisProcess() {
 		this.isisTopo = this.topoReceiver.getIsisTopo();// 得到分析后的isis拓扑对象
 
 		if (this.isisTopo == null) {// 如果拓扑对象没得到，返回
 			logger.warning("Isis  topo is null !");
-			return false;
+			return Constant.TOPO_NOT_RECEIVED;
 		}
 
-		pid = this.isisTopo.getPeriodId();
+		PID = this.isisTopo.getPeriodId();
 
 		if (this.topoReceiver.isTopoChanged()) {// 如果topo发生改变
 			this.routeAnalyser.setTopo(this.isisTopo);// 设置新的拓扑对象给分析线程
@@ -208,17 +210,17 @@ public class MainProcesser {
 
 		this.routeAnalyser.setMapLidTlink(this.isisTopo.getMapLidTlink());
 
-		if (pidIndex == 1) { // 第一个周期提前计算路径
+		if (PID_INDEX == 1) { // 第一个周期提前计算路径
 			routeAnalyser.isisPreCalculate();
-		} else if (pidIndex > 1 && this.topoReceiver.isTopoChanged()) {// 第二周期以后如果拓扑发生改变才需要提前计算路径
+		} else if (PID_INDEX > 1 && this.topoReceiver.isTopoChanged()) {// 第二周期以后如果拓扑发生改变才需要提前计算路径
 			routeAnalyser.isisPreCalculate();
 		}
 
-		this.netflows = this.flowReceiver.getAllFlows(pidIndex);// 得到全部flow
+		this.netflows = this.flowReceiver.getAllFlows(PID_INDEX);// 得到全部flow
 
 		if (this.netflows == null || this.netflows.size() == 0) {// 如果flow文件没得到，返回
-			logger.warning("no flow got in pid:" + pid);
-			return false;
+			logger.warning("no flow got in pid:" + PID);
+			return Constant.FLOW_NOT_RECEIVED;
 		}
 
 		// 开始统计
@@ -227,40 +229,33 @@ public class MainProcesser {
 		this.ipStatisticThread.start();
 		// 开始分析flow路径
 		this.routeAnalyser.setNetflows(this.netflows);// 将flow给routeAnalyser
-		this.routeAnalyser.isisRouteCalculate(pid);// 计算flow路径
+		this.routeAnalyser.isisRouteCalculate(PID);// 计算flow路径
 
-		return true;
+		return Constant.FLOW_ANALYSIS_SUCCESS;
 	}
 
-	public boolean ospfProcess() {
+	public int ospfProcess() {
 		this.ospfTopo = this.topoReceiver.getOspfTopo();// 得到分析后的ospf拓扑对象
 
 		if (this.ospfTopo == null) {// 如果拓扑对象没得到，返回
 			logger.warning("Ospf topo is null !");
-			return false;
+			return Constant.TOPO_NOT_RECEIVED;
 		}
 
-		pid = this.ospfTopo.getPeriodId();// 获得周期
+		PID = this.ospfTopo.getPeriodId();// 获得周期
+		this.routeAnalyser.setTopo(this.ospfTopo);// 拓扑对象给分析线程
 
-		if (this.topoReceiver.isTopoChanged()) {// 如果topo发生改变
-			this.routeAnalyser.setTopo(this.ospfTopo);// 设置新的拓扑对象给分析线程
-		} else {
-			this.ospfTopo.resetTrafficData(); // 否则用原来拓扑对象，但是拓扑对象中id_trafficlink映射的link上的业务流量大小要置0
-		}
-
-		this.routeAnalyser.setMapLidTlink(this.ospfTopo.getMapLidTlink());// 将拓扑link
-
-		if (pidIndex == 1) { // 第一个周期提前计算路径
+		if (PID_INDEX == 1) { // 第一个周期提前计算路径
 			routeAnalyser.ospfPreCalculate();
-		} else if (pidIndex > 1 && this.topoReceiver.isTopoChanged()) {// 第二周期以后如果拓扑发生改变才需要提前计算路径
+		} else if (PID_INDEX > 1 && this.topoReceiver.isTopoChanged()) {// 第二周期以后如果拓扑发生改变才需要提前计算路径
 			routeAnalyser.ospfPreCalculate();
 		}
 
-		this.netflows = this.flowReceiver.getAllFlows(pidIndex);// 得到全部flow
+		this.netflows = this.flowReceiver.getAllFlows(PID_INDEX);// 得到全部flow
 
 		if (this.netflows == null || this.netflows.size() == 0) {// 如果flow文件没得到，返回
-			logger.warning("no flow got in pid:" + pid);
-			return false;
+			logger.warning("no flow got in pid:" + PID);
+			return Constant.FLOW_NOT_RECEIVED;
 		}
 
 		// 开始统计
@@ -272,9 +267,9 @@ public class MainProcesser {
 		this.ipStatisticThread.start();
 		// 开始分析flow路径
 		this.routeAnalyser.setNetflows(this.netflows);// 将flow给routeAnalyser
-		this.routeAnalyser.ospfRouteCalculate(pid);// 计算flow路径
+		this.routeAnalyser.ospfRouteCalculate(PID);// 计算flow路径
 
-		return true;
+		return Constant.FLOW_ANALYSIS_SUCCESS;
 	}
 
 	/**
@@ -322,6 +317,10 @@ public class MainProcesser {
 					this.configData.getGlobalAnalysisPort(),
 					this.configData.getGlobalAnalysisIP(), filePath);
 			new Thread(resultSender).start();// 发送给综合分析板卡
+		}
+
+		if (this.ospfTopo != null) {
+			this.ospfTopo.resetTrafficData();
 		}
 	}
 

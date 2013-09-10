@@ -9,6 +9,7 @@ package ict.analyser.receiver;
 import ict.analyser.analysis.MainProcesser;
 import ict.analyser.config.ConfigData;
 import ict.analyser.isistopo.IsisTopo;
+import ict.analyser.ospftopo.BgpItem;
 import ict.analyser.ospftopo.OspfTopo;
 import ict.analyser.tools.FileProcesser;
 
@@ -21,6 +22,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.HashMap;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -39,6 +41,7 @@ public class TopoReceiver extends Thread {
 	private static int bufferSize = 50 * 1024;// 缓冲区大小
 	private boolean signal = false;// 第一个周期开始接收文件时发送给主线程的signal
 	private boolean isTopoChanged = true;// 判断拓扑是否发生改变
+	private boolean isBgpChanged = true;// 判断bgp是否发生改变
 	private Socket client = null;// 保存接收到连接的socket
 	private Lock topoLocker = null;// 为topo数据加锁
 	private String protocol = null;// 协议类型
@@ -183,19 +186,36 @@ public class TopoReceiver extends Thread {
 	 */
 	private void processTopo() {
 		topoLocker.lock();
+		this.isBgpChanged = true;
+		this.isTopoChanged = true;
 
 		try {
 			// 调用处理topo文件函数 写在FileProcesser里
 			if (this.protocol.equalsIgnoreCase("ospf")) {
 				OspfTopo newTopo = fileProcesser.readOspfTopo(this.ospfPath);
+				this.isTopoChanged = fileProcesser.isTopoChanged();
+				this.isBgpChanged = fileProcesser.isBgpChanged();
 
 				if (fileProcesser.isTopoChanged()) {// 如果topo改变了
-					if (newTopo != null) {
+					if (fileProcesser.isBgpChanged()) {// 如果bgp变了
+						if (newTopo == null) {// 但是没解析到拓扑数据，报错返回，用原来拓扑数据
+							logger.warning("topo is changed but no topo data!");
+							return;
+						}
+						this.ospfTopo = newTopo;// 否则用新拓扑中数据
+					} else { // 如果拓扑变 bgp没变
+
+						if (newTopo == null) {// 新拓扑为空报错
+							logger.warning("topo is changed but no topo data!");
+							return;
+						}
+						// 否则bgp用原来数据，拓扑部分用新数据
+						HashMap<Long, BgpItem> mapPrefixBgp = this.ospfTopo
+								.getMapPrefixBgpItem();
 						this.ospfTopo = newTopo;
-					} else {
-						logger.warning("topo is changed but no topo data!");
-						return;
+						this.ospfTopo.setMapPrefixBgpItem(mapPrefixBgp);
 					}
+
 				} else {// 如果拓扑没改变，只更改pid
 					long pid = fileProcesser.getPid();
 
@@ -205,17 +225,28 @@ public class TopoReceiver extends Thread {
 					}
 
 					this.ospfTopo.setPeriodId(pid);
+
+					if (fileProcesser.isBgpChanged()) {// 如果拓扑没变，bgp改变了
+						if (newTopo == null) {
+							logger.warning("topo is changed but no topo data!");
+							return;
+						}
+
+						this.ospfTopo.setMapPrefixBgpItem(newTopo
+								.getMapPrefixBgpItem());// 拓扑没变 bgp内容变了，只更新bgp数据
+					}
+					// 最后一种情况是两者都没变，不做任何操作
 				}
-			} else {
+			} else {// 处理isis情况，只需考虑拓扑
 				IsisTopo newTopo = fileProcesser.readIsisTopo(this.isisPath);
 
 				if (fileProcesser.isTopoChanged()) {// 如果topo改变了
-					if (newTopo != null) {
-						this.isisTopo = newTopo;
-					} else {
+					if (newTopo == null) {
 						logger.warning("topo is changed but no topo data!");
 						return;
 					}
+
+					this.isisTopo = newTopo;
 				} else {// 如果拓扑没改变，只更改pid
 					long pid = fileProcesser.getPid();
 
@@ -227,7 +258,8 @@ public class TopoReceiver extends Thread {
 					this.isisTopo.setPeriodId(pid);
 				}
 			}
-			topoCondition.signal();
+
+			topoCondition.signal();// topo is ready
 		} finally {
 			topoLocker.unlock();
 		}
@@ -300,4 +332,10 @@ public class TopoReceiver extends Thread {
 		return isTopoChanged;
 	}
 
+	/**
+	 * @return Returns the isBgpChanged.
+	 */
+	public boolean isBgpChanged() {
+		return isBgpChanged;
+	}
 }
