@@ -6,15 +6,11 @@
  */
 package ict.analyser.ospftopo;
 
-
-
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
-
 
 /**
  * 
@@ -23,19 +19,12 @@ import java.util.Map.Entry;
  * @version 1.0, 2012-10-18
  */
 public class OspfRouter {
-
 	private long routerId = 0;// 路由器id
-
 	private ArrayList<Long> ips = null;// 接口ip列表
-
 	private ArrayList<Link> links = null;// 链路列表
-
 	private ArrayList<String> areas = null;// 路由器所在区域列表
-	
-	private HashMap<Long,Long> mapIpPrefix = null;//路由器ip和前缀映射
-
+	private HashMap<Long, Long> mapIpPrefix = null;// 路由器ip和前缀映射
 	private ArrayList<Long> neighborIds = null;// 邻居id列表，与link 一 一对应
-
 	private HashMap<Integer, Integer> mapInputLinkid = null;// 接口索引号与链路id对应关系
 
 	public OspfRouter() {
@@ -43,7 +32,7 @@ public class OspfRouter {
 		links = new ArrayList<Link>();
 		areas = new ArrayList<String>();
 		neighborIds = new ArrayList<Long>();
-		mapIpPrefix = new HashMap<Long,Long>();
+		mapIpPrefix = new HashMap<Long, Long>();
 		mapInputLinkid = new HashMap<Integer, Integer>();
 	}
 
@@ -160,21 +149,21 @@ public class OspfRouter {
 		return 0;
 	}
 
-	public long getIpByPrefix(long prefix){
-		Map.Entry<Long,Long> entry;
-		Iterator<Entry<Long, Long>> iter = this.mapIpPrefix
-				.entrySet().iterator();
+	public long getIpByPrefix(long prefix) {
+		Map.Entry<Long, Long> entry;
+		Iterator<Entry<Long, Long>> iter = this.mapIpPrefix.entrySet()
+				.iterator();
 
 		while (iter.hasNext()) {
-		       entry = iter.next();
-		       if(entry.getValue() == prefix){
-		    	   return entry.getKey();
-		       }
+			entry = iter.next();
+			if (entry.getValue() == prefix) {
+				return entry.getKey();
+			}
 		}
 
 		return 0;
 	}
-	
+
 	public long getPrefixByIp(long ip) {
 
 		if (ip == 0) {

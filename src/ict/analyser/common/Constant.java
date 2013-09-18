@@ -19,9 +19,9 @@ public class Constant {
 	public final static int FLOW_NOT_RECEIVED = 3;
 	public final static int CONFIG_NOT_RECEIVED = 4;
 	// 流量类型
-	public final static int INTERNAL_FLOW = 1;
-	public final static int INBOUND_FLOW = 2;
-	public final static int OUTBOUND_FLOW = 3;
-	public final static int TRANSIT_FLOW = 4;
+	public final static int INTERNAL_FLOW = 0;
+	public final static int INBOUND_FLOW = 1;
+	public final static int OUTBOUND_FLOW = 2;
+	public final static int TRANSIT_FLOW = 3;
 
 }

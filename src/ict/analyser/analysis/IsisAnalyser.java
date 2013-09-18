@@ -6,6 +6,7 @@
  */
 package ict.analyser.analysis;
 
+import ict.analyser.common.Constant;
 import ict.analyser.common.Vertex;
 import ict.analyser.database.DBWriter;
 import ict.analyser.flow.Flow;
@@ -142,7 +143,7 @@ public class IsisAnalyser implements Runnable {
 					netflow.getSrcMask());
 			// 注：chuyang中全网都是l2网络，因此只有域内流量，如果根据prefix找不到路由器则跳过
 			if (ridInter == null) {
-				netflow.getDetail();
+				netflow.printDetail();
 				logger.info("cannot find prefix for src :"
 						+ netflow.getSrcAddr() + "  "
 						+ IPTranslator.calLongToIp((long) netflow.getSrcAddr()));
@@ -155,7 +156,7 @@ public class IsisAnalyser implements Runnable {
 			srcInterface = ridInter[1];
 
 			if (srcRouterId == 0 || srcInterface == 0) {
-				netflow.getDetail();
+				netflow.printDetail();
 				logger.info("interid == 0 or srcInterface == 0");
 				System.out
 						.println("***************************************************\n");
@@ -166,7 +167,7 @@ public class IsisAnalyser implements Runnable {
 					netflow.getDstMask());
 
 			if (ridInter == null) {
-				netflow.getDetail();
+				netflow.printDetail();
 				logger.info("cannot find prefix for dst:"
 						+ netflow.getDstAddr() + "   "
 						+ IPTranslator.calLongToIp((long) netflow.getDstAddr()));
@@ -179,14 +180,14 @@ public class IsisAnalyser implements Runnable {
 			dstInterface = ridInter[1];
 
 			if (dstRouterId == 0 || dstInterface == 0) {
-				netflow.getDetail();
+				netflow.printDetail();
 				logger.info("interid == 0 or dstInterface == 0");
 				System.out
 						.println("***************************************************\n");
 				continue;
 			}
 
-			netflow.getDetail();
+			netflow.printDetail();
 
 			if (srcRouterId == dstRouterId) {
 				logger.info("srcRid  ==  dstRid,create a new path with cost 0");
@@ -198,7 +199,7 @@ public class IsisAnalyser implements Runnable {
 				// continue;
 			} else {
 
-				direction = Flow.INTERNAL;
+				direction = Constant.INTERNAL_FLOW;
 
 				System.out.println("src id:"
 						+ this.topo.getMapLongStrId().get(srcRouterId)

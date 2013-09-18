@@ -13,24 +13,15 @@ package ict.analyser.ospftopo;
  * @version 1.0, 2012-11-5
  */
 public class InterAsLink {
-
-	private int linkId = 0;// 标识链路的id
-
-	private int input = 0;// 接口索引
-
-	private long myBrId = 0;// 本as的asbr的id
-
-	private long myInterIp = 0;// 本ASBR设备接口ip
-
 	private long mask = 0;// 链路mask
-
-	private long neighborBrId = 0;// 邻居as的asbr 的接口id
-
-	private long neighborBrIp = 0;// 邻居as的asbr的接口ip
-
-	private long neighborAS = 0;// 邻居as
-
+	private int input = 0;// 接口索引
 	private int metric = 0;// 链路上的metric值
+	private int linkId = 0;// 标识链路的id
+	private long myBrId = 0;// 本as的asbr的id
+	private long myInterIp = 0;// 本ASBR设备接口ip
+	private long neighborAS = 0;// 邻居as
+	private long neighborBrIp = 0;// 邻居as的asbr的接口ip
+	private long neighborBrId = 0;// 邻居as的asbr 的接口id
 
 	/**
 	 * @return Returns the linkId.
@@ -167,4 +158,7 @@ public class InterAsLink {
 		this.neighborBrIp = neighborBrIp;
 	}
 
+	public long getPrefix() {
+		return this.myInterIp & this.mask;
+	}
 }

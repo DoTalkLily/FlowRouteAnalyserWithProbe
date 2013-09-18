@@ -106,29 +106,14 @@ public class OspfAnalyser implements Runnable {
 		long srcAS = 0;
 		long dstAS = 0;
 		int flowDirection = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
-		long srcRouterId = 0;
-		long dstRouterId = 0;
-		long srcInterface = 0;
-		long dstInterface = 0;
-		long[] idInter = null;
 		long topoAS = this.topo.getAsNumber();
 		int flowCount = this.netflows.size();// 得到聚合后的netflow列表的条目总数
 
-		Path path = null;
 		Netflow netflow = null;// 临时变量
-		Object[] result = new Object[3];
-		ArrayList<Object[]> dstIdMetric = new ArrayList<Object[]>();// 保存目的设备id——metric映射，当是inbound和internal时，metric是0，因为目的设备id唯一，其他清空这里保存的是asbr的id——所宣告metric映射，这里为了计算接口统一而设计
 
 		for (int i = 0; i < flowCount; i++) { // 开始遍历，逐条分析路径
 			// 重置临时变量
-			path = null;
-			flowDirection = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
-			srcRouterId = 0;
-			dstRouterId = 0;
-			srcInterface = 0;
-			dstInterface = 0;
-			dstIdMetric.clear();// 清空map
-
+			flowDirection = 0;// 记录flow种类，internal:0,inbound:1,outbound:2,transit:3
 			// 开始分析
 			netflow = this.netflows.get(i);// 取得一条流
 			srcAS = netflow.getSrcAs();// 源as号
@@ -139,296 +124,23 @@ public class OspfAnalyser implements Runnable {
 																// 或者都等于拓扑文件中的as则为域内流量
 				// 如果源和目的设备所在的as号和当前as号相同，是域内flow
 				flowDirection = Constant.INTERNAL_FLOW;// 标记为inbound
-				idInter = getRId(netflow.getSrcAddr(), netflow.getSrcMask());
 
-				if (idInter == null) {
-					// 这里添加源是另一个as的asbr接口发出的情况,这种情况下 源和目的as号都是0
-					idInter = processInterAsFlow(netflow);
-
-					if (idInter == null) {
-						netflow.getDetail();
-						logger.warning("internal flow !! idInter for"
-								+ IPTranslator.calLongToIp(netflow.getSrcAddr())
-								+ " can't be found!");
-						System.out.println();
-						continue;
-					}
-				}
-
-				srcRouterId = idInter[0];
-				srcInterface = idInter[1];
-
-				if (srcRouterId == 0 || srcInterface == 0) {// 合法性检验
-					netflow.getDetail();
-					logger.warning("internal flow! router id for"
-							+ IPTranslator.calLongToIp(netflow.getSrcAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				idInter = getRId(netflow.getDstAddr(), netflow.getDstMask());
-
-				if (idInter == null) {
-					netflow.getDetail();
-					logger.warning("internal flow!!idInter for"
-							+ IPTranslator.calLongToIp(netflow.getDstAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				dstRouterId = idInter[0];
-				dstInterface = idInter[1];
-
-				if (dstRouterId == 0 || dstInterface == 0) {// 合法性检验
-					netflow.getDetail();
-					logger.warning("internal flow! router id for"
-							+ IPTranslator.calLongToIp(netflow.getDstAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				if (srcRouterId == dstRouterId) {// 如果源和目的设备id相同
-					netflow.getDetail();
-					logger.warning("src router id is same with dst router id!"
-							+ "  "
-							+ IPTranslator.calLongToIp(netflow.getSrcAddr())
-							+ "  "
-							+ IPTranslator.calLongToIp(netflow.getDstAddr()));
-					path = new Path();
-					path.setTotalCost(0);
-					path.setSrcInterface(srcInterface);
-					path.setDstInterface(dstInterface);
-					path.setSrcRouter(srcRouterId);
-				} else {
-					logger.info("internal!! src router id:"
-							+ IPTranslator.calLongToIp(srcRouterId)
-							+ "   dst router id:"
-							+ IPTranslator.calLongToIp(dstRouterId));
-
-					path = this.processer.getPathByIds(srcRouterId + "_"
-							+ dstRouterId);
-
-					if (path == null) {
-						logger.warning("path for src router id:"
-								+ IPTranslator.calLongToIp(srcRouterId)
-								+ "   dst router id:"
-								+ IPTranslator.calLongToIp(dstRouterId)
-								+ " not found!");
-						continue;
-					}
-				}
 			} else if ((srcAS == topoAS && dstAS != topoAS)
 					|| (srcAS == 0 && dstAS != 0)) {// outboundflow
 
 				flowDirection = Constant.OUTBOUND_FLOW;
-				idInter = getRId(netflow.getSrcAddr(), netflow.getSrcMask());
-
-				if (idInter == null) {
-					netflow.getDetail();
-					logger.info("outbound flow!! idInter for :"
-							+ IPTranslator.calLongToIp(netflow.getSrcAddr()));
-					System.out.println();
-					continue;
-				}
-
-				srcRouterId = idInter[0];
-				srcInterface = idInter[1];
-
-				if (srcRouterId == 0 || srcInterface == 0) {// 合法性检验
-					netflow.getDetail();
-					logger.warning("outbound flow!! router id for"
-							+ IPTranslator.calLongToIp(netflow.getSrcAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				// dstIdMetric = this.topo.getAsbrId(netflow.getDstAddr(),
-				// netflow.getDstMask()); //
-				// 根据目的设备ip和mask查找所有宣告所这个目的设备的asbr的id——metric的映射
-				// 这里添加根据bgp信息获得目的路由器id函数！！！和接口
-
-				if (dstRouterId == 0) {// 如果没有找到，提示出错，分析下一条
-					netflow.getDetail();
-					logger.warning("outbound flow!!destionation router id for"
-							+ IPTranslator.calLongToIp(netflow.getDstAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				path = this.processer.getPathByIds(srcRouterId + "_"
-						+ dstRouterId);
-
-				if (path == null) {
-					logger.warning("path for src router id:"
-							+ IPTranslator.calLongToIp(srcRouterId)
-							+ "   dst router id:"
-							+ IPTranslator.calLongToIp(dstRouterId)
-							+ " not found!");
-					continue;
-				}
 
 			} else if ((srcAS != topoAS && dstAS == topoAS)
 					|| (srcAS != 0 && dstAS == 0)) {// inboundflow
 
 				flowDirection = Constant.INBOUND_FLOW;
-				idInter = getRId(netflow.getDstAddr(), netflow.getDstMask());
-
-				if (idInter == null) {
-					netflow.getDetail();
-					logger.warning("inbound flow!!idInter for"
-							+ IPTranslator.calLongToIp(netflow.getDstAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				dstRouterId = idInter[0];
-				dstInterface = idInter[1];
-
-				if (dstRouterId == 0 || dstInterface == 0) {
-					netflow.getDetail();
-					logger.warning("inbound!!router id for"
-							+ IPTranslator.calLongToIp(netflow.getDstAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				// 铺过域间流量并且返回asbr的id
-				idInter = processInterAsFlow(netflow);
-
-				if (idInter == null) {
-					netflow.getDetail();
-					logger.warning("inbound!!router id for"
-							+ IPTranslator.calLongToIp(netflow.getSrcAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				srcRouterId = idInter[0];
-				srcInterface = idInter[1];
-
-				if (srcRouterId == 0) {// 合法性检验
-					netflow.getDetail();
-					logger.warning("inbound flow!!router id for"
-							+ IPTranslator.calLongToIp(netflow.getSrcAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				if (srcRouterId == dstRouterId) {// 如果源和目的设备id相同
-					netflow.getDetail();
-					if (this.topo.getAsbrIds().contains(srcRouterId)) {
-						logger.info("dst is border router! add flow to inter as link!!! src inter:"
-								+ IPTranslator.calLongToIp(srcInterface)
-								+ "  dst inter:"
-								+ IPTranslator.calLongToIp(dstInterface));
-						path = new Path();
-						path.setTotalCost(0);
-						path.setSrcRouter(srcRouterId);
-						path.setSrcInterface(srcInterface);
-						path.setDstInterface(dstInterface);
-					}
-				}
-
-				if (path == null) {
-					netflow.getDetail();
-					logger.info("inbound!! src router id:"
-							+ IPTranslator.calLongToIp(srcRouterId)
-							+ "   dst router id:"
-							+ IPTranslator.calLongToIp(dstRouterId));
-
-					path = this.processer.getPathByIds(srcRouterId + "_"
-							+ dstRouterId);
-
-					if (path == null) {
-						logger.warning("path for src router id:"
-								+ IPTranslator.calLongToIp(srcRouterId)
-								+ "   dst router id:"
-								+ IPTranslator.calLongToIp(dstRouterId)
-								+ " not found!");
-						continue;
-					}
-				}
 
 			} else {// transitflow
 				flowDirection = Constant.TRANSIT_FLOW;
-
-				// 铺域间流量并且返回router id
-				idInter = processInterAsFlow(netflow);
-
-				if (idInter == null) {
-					netflow.getDetail();
-					logger.warning("transit!!!router id for"
-							+ IPTranslator.calLongToIp(netflow.getSrcAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-				srcRouterId = idInter[0];
-				srcInterface = idInter[1];// 20130606
-
-				if (srcRouterId == 0) {// 合法性检验
-					netflow.getDetail();
-					logger.warning("transit!!!router id for"
-							+ IPTranslator.calLongToIp(netflow.getSrcAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				// 查找netflow所经过的asbr id，从AS出口的
-				dstIdMetric = topo.getAsbrId(netflow.getDstAddr(),
-						netflow.getDstMask()); // 根据目的设备ip和mask查找所有宣告所这个目的设备的asbr的id——metric的映射
-
-				if (dstIdMetric.size() == 0) {// 如果没有找到，提示出错，分析下一条
-					netflow.getDetail();
-					logger.warning("transit!!!destionation router id for"
-							+ IPTranslator.calLongToIp(netflow.getDstAddr())
-							+ " can't be found!");
-					System.out.println();
-					continue;
-				}
-
-				path = (Path) result[0];
-				dstRouterId = (Long) result[1];
-				// forwarding = (Integer) result[2];
-
-			}// end of else
-
-			if (path == null) {
-				logger.warning("cannot find path for src id: "
-						+ IPTranslator.calLongToIp(srcRouterId) + "   dst id:"
-						+ IPTranslator.calLongToIp(dstRouterId));
-				System.out
-						.println("*********************************************\n");
-				continue;
 			}
 
-			if (path.getTotalCost() == 0) {// 如果路径cost为0，则源和目的路由器相同
-				path.setSrcRouter(srcRouterId);
-				path.setDstRouterId(dstRouterId);
-			}
+			processFlow(netflow, flowDirection);
 
-			System.out.println("result path:" + path.getPathInIpFormat());
-			System.out
-					.println("*********************************************\n");
-			// this.foundPath.put(srcRouter + "_" + dstRouter, path);
-			this.processer.insertFoundPath(srcRouterId + "_" + dstRouterId,
-					path);// 将路径加入成功路径缓存中
-
-			// 分别设置path的源和目的前缀
-			path.setSrcInterface(srcInterface);
-			path.setDstInterface(dstInterface);
-			// 插入流量
-			insertFlow(netflow, path, flowDirection);
 		}// end of for
 			// 所有流量都分析完了
 		sendCompleteSignal();// 通知主线程已经分析完了
@@ -437,56 +149,15 @@ public class OspfAnalyser implements Runnable {
 		}
 	}
 
-	/**
-	 * 
-	 * 
-	 * 
-	 * @param netflow
-	 * @param syn
-	 *            如果为true 则代表源为另一个as的边界路由器ip的特殊情况
-	 * @return
-	 */
-	private long[] processInterAsFlow(Netflow netflow) {
-		Object[] idLinkid = null;
-
-		idLinkid = this.topo.getLinkidByIpInput(netflow.getRouterIP(),
-				netflow.getInput());
-
-		if (idLinkid == null) {
-			logger.warning("can not find border router for :"
-					+ IPTranslator.calLongToIp(netflow.getRouterIP()));
-			return null;
-		}
-
-		int linkid = (Integer) idLinkid[1];
-
-		if (linkid != 0) {
-			logger.warning("add flow to border link!");
-			setMapLidTraffic(linkid, netflow.getdOctets(), netflow.getDstPort());// 将边界链路id——flow加入映射中
-		}
-
-		long[] result = new long[2];
-		result[0] = (Long) idLinkid[0];// 放路由器id
-		result[1] = (Long) idLinkid[2];// 放路由器接口ip地址
-
-		return result;
-	}
-
-	private long[] getRId(long ip, byte mask) {
-		long[] result = new long[2];
-		// 这里打了个补丁，如果netflow中的源ip或者目的ip是路由器的接口ip，那么先根据ip地址定位到路由器
+	private long getRId(long ip, byte mask) {
+		// 这里打了个补丁，这样能保证网络中的所有流量都能被分析，而非只分析终端，如果netflow中的源ip或者目的ip是路由器的接口ip，那么先根据ip地址定位到路由器，这里包括每个路由器接口ip和边界路由器接口ip
 		long routerId = this.topo.getRouterInterByIp(ip);
 
 		if (routerId != 0) {// 是路由器接口发出的流量
-			long dmask = IPTranslator.calByteToLong(mask);
-			long prefix = ip & dmask;
-			result[0] = routerId;
-			result[1] = prefix;
-		} else {
-			result = this.topo.getRouterIdByPrefix(ip, mask);// 根据源ip，mask获得源设备id
+			return routerId;
 		}
 
-		return result;
+		return this.topo.getRouterIdByPrefix(ip, mask);// 根据源ip，mask获得源设备id
 	}
 
 	/**
@@ -616,7 +287,6 @@ public class OspfAnalyser implements Runnable {
 		int size = links.size();
 		long bytes = netflow.getdOctets();
 		int linkId = 0;
-		// System.out.println("path link size:"+size+"  "+path.getPathInIpFormat());
 		for (int i = 0; i < size; i++) {
 			link = links.get(i);
 			// link.setTotalBytes(bytes);
@@ -627,35 +297,85 @@ public class OspfAnalyser implements Runnable {
 		this.allFlowRoute.add(flow);
 	}
 
-	// /**
-	// * 判断flow大小是不是前topN的，如果是 ，加入topNflow列表中,这里可以考虑用最小堆做
-	// *
-	// * @param bytes
-	// * 一条流的大小
-	// * @return 返回是否加入topN条流里面
-	// */
-	// public boolean isInTopN(long bytes) {
-	// int size = this.topNBytes.size();// 得到保存前topN条flow最大的flow列表
-	// int position = (size == 0) ? size : (size - 1);// 位置指针，先置为列表最末尾
-	//
-	// for (int i = size - 1; i >= 0; i--) {// 从后向前遍历列表
-	// if (bytes >= this.topNBytes.get(i)) {// 如果当前flow大小大于列表中这个位置的flow
-	// position = i;// 指针标记位置
-	// } else {
-	// break;// 否则退出
-	// }
-	// }
-	//
-	// this.topNBytes.add(position, bytes);// 加入列表相应位置中
-	//
-	// if (position <= (size - 1)) {// 如果插入了，而且链表长度已经等于topN了
-	// if (size == this.topN) {// 如果列表长度已经是topN了
-	// this.topNBytes.remove(size);// 将第topn+1个删除
-	// }
-	// return true;
-	// }
-	// return false;
-	// }
+	private long getAsbrIdByRouterIp(long routerIp) {
+		return this.topo.getAsbrRidByIp(routerIp);
+	}
+
+	private long getAsbrIdByPrefix(long ip, byte mask, long bytes, int port) {
+		Object[] result = this.topo.getAsbrIdByPrefix(ip, mask);
+
+		if (result == null) {
+			return 0;
+		}
+
+		setMapLidTraffic((Integer) result[1], bytes, port);// 铺域间链路流量
+		return (Long) result[0];// 返回边界路由器id
+	}
+
+	private void processFlow(Netflow netflow, int type) {
+		if (netflow == null || type < 0) {
+			return;
+		}
+
+		long srcRouterId, dstRouterId;
+
+		if (type == Constant.INTERNAL_FLOW || type == Constant.OUTBOUND_FLOW) {
+			srcRouterId = getRId(netflow.getSrcAddr(), netflow.getSrcMask());
+
+		} else {
+			srcRouterId = getAsbrIdByRouterIp(netflow.getRouterIP());
+		}
+
+		if (srcRouterId == 0) {
+			netflow.printDetail();
+			logger.warning("id for "
+					+ IPTranslator.calLongToIp(netflow.getSrcAddr())
+					+ "  cannot be found!\n");
+			return;
+		}
+
+		if (type == Constant.INTERNAL_FLOW || type == Constant.INBOUND_FLOW) {
+			dstRouterId = getRId(netflow.getDstAddr(), netflow.getDstMask());
+		} else {
+			// 根据前缀信息获得asbr id 同时铺完边界链路流量
+			dstRouterId = getAsbrIdByPrefix(netflow.getDstAddr(),
+					netflow.getDstMask(), netflow.getdOctets(),
+					netflow.getDstPort());
+		}
+
+		if (dstRouterId == 0) {
+			netflow.printDetail();
+			logger.warning("id for "
+					+ IPTranslator.calLongToIp(netflow.getDstAddr())
+					+ "  cannot be found!\n");
+			return;
+		}
+
+		Path path;
+
+		if (srcRouterId == dstRouterId) {// 如果源和目的设备id相同 ,不处理
+			netflow.printDetail();
+			logger.warning("src router id is same with dst router id!" + "  "
+					+ IPTranslator.calLongToIp(netflow.getSrcAddr()) + "  "
+					+ IPTranslator.calLongToIp(netflow.getDstAddr()));
+			return;
+		}
+
+		path = this.processer.getPathByIds(srcRouterId + "_" + dstRouterId);
+
+		if (path == null) { // 打印信息
+			logger.warning("path for src router id:"
+					+ IPTranslator.calLongToIp(srcRouterId)
+					+ "   dst router id:"
+					+ IPTranslator.calLongToIp(dstRouterId) + " not found!");
+			return;
+		}
+
+		System.out.println("result path:" + path.getPathInIpFormat());
+		System.out.println("*********************************************\n");
+		// 插入流量
+		insertFlow(netflow, path, type);
+	}
 
 	/**
 	 * @param mapLinkIdBytes

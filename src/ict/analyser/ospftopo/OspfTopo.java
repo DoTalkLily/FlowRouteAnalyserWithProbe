@@ -27,35 +27,32 @@ public class OspfTopo {
 	private int asNumber = 0;// 拓扑所在AS号
 	private ArrayList<Long> asbrIds = null;// 保存全部边界路由器id
 	private ArrayList<Long> allRouterIds = null;// 保存全网路由器id列表
-	private HashMap<Long, Long> mapASBRipId = null;// ASBR的接口ip(long)——设备id,来自TOPO文件中的“asbr”
 	private HashMap<Long, Long> mapIpRouterid = null;// 保存本AS内路由器ip——id映射
-	private ArrayList<InterAsLink> interAsLinks = null;// 边界链路对象列表
 	private HashMap<Long, OspfRouter> mapRidAsbr = null;// 拓扑中边界路由器id——路由器对象映射
 	private HashMap<Long, Long> mapPrefixRouterId = null;// topo文件中stubs对应的
 	private HashMap<Long, Integer> mapASBRIpLinkid = null;// ASBR路由器开启监听netflow接口的ip地址和linkid
 	private HashMap<Long, OspfRouter> mapRidRouter = null;// 路由器id——Router映射
 	private HashMap<Long, BgpItem> mapPrefixBgpItem = null;// prefix和宣告这个prefix的bgp报文
 	private HashMap<Integer, TrafficLink> mapLidTlink = null;// linkid——TrafficLink
+	private HashMap<Long, InterAsLink> mapNextHopAsLink = null;// nexthop——边界链路对象映射
+	private HashMap<Long, AsExternalLSA> mapPrefixExternalLsa = null;// 前缀——LSA5映射
 	private Logger logger = Logger.getLogger(OspfTopo.class.getName());// 注册一个logger
 
-	public OspfTopo() {
+	public OspfTopo(boolean initial) {
+		if (!initial) {
+			return;
+		}
+
 		this.asbrIds = new ArrayList<Long>();
 		this.allRouterIds = new ArrayList<Long>();
-		this.mapASBRipId = new HashMap<Long, Long>();
 		this.mapIpRouterid = new HashMap<Long, Long>();
-		this.interAsLinks = new ArrayList<InterAsLink>();
 		this.mapRidAsbr = new HashMap<Long, OspfRouter>();
 		this.mapPrefixRouterId = new HashMap<Long, Long>();
 		this.mapRidRouter = new HashMap<Long, OspfRouter>();
-		this.mapLidTlink = new HashMap<Integer, TrafficLink>();
 		this.mapASBRIpLinkid = new HashMap<Long, Integer>();
-	}
-
-	// 当接受到的拓扑没改变，只是内部的bgp条目改变了，就不初始化其他数据结构，只把映射作为参数传入即可
-	public OspfTopo(HashMap<Long, BgpItem> mapPrefixBgpItem) {
-		if (mapPrefixBgpItem != null) {
-			this.mapPrefixBgpItem = mapPrefixBgpItem;
-		}
+		this.mapLidTlink = new HashMap<Integer, TrafficLink>();
+		this.mapNextHopAsLink = new HashMap<Long, InterAsLink>();
+		this.mapPrefixExternalLsa = new HashMap<Long, AsExternalLSA>();
 	}
 
 	public void setMapASBRIpLinkId(long ip, int linkid) {
@@ -94,18 +91,6 @@ public class OspfTopo {
 		return asNumber;
 	}
 
-	public void setMapAsbrIpRouterId(long ip, long id, int input, int linkid) {
-		if (ip > 0 && id >= 0 && linkid > 0) {
-			OspfRouter router = getRouterById(id);
-
-			if (router != null) {
-				router.setInputLinkid(input, linkid);
-				this.mapASBRipId.put(ip, id);
-				this.asbrIds.add(id);
-			}
-		}
-	}
-
 	public void setMapInputLinkid(long id, int input, int linkid) {
 		OspfRouter router = this.getRouterById(id);
 
@@ -118,13 +103,6 @@ public class OspfTopo {
 		return this.asbrIds;
 	}
 
-	/**
-	 * @return Returns the mapASBRipId.
-	 */
-	public HashMap<Long, Long> getMapASBRipId() {
-		return mapASBRipId;
-	}
-
 	public OspfRouter getRouterById(long routerId) {
 		if (routerId == 0) {
 			logger.warning("router id is illegal in OspfAnalyser！");
@@ -134,182 +112,58 @@ public class OspfTopo {
 		return this.mapRidRouter.get(routerId);
 	}
 
-	/**
-	 * 根据ip地址和mask查找宣告这个prefix的asbr 的id——metric映射
-	 * 
-	 * 
-	 * @param ip
-	 * @param mask
-	 * @return 宣告这个prefix的asbr 的id——metric映射
+	/*
+	 * 根据前缀查找bgp表返回宣告的边界路由器id
 	 */
-	public ArrayList<Object[]> getAsbrId(long ip, byte mask) {
+	public Object[] getAsbrIdByPrefix(long ip, byte mask) {
 		long dmask = IPTranslator.calByteToLong(mask);
-		long prefix = ip & dmask; // 计算prefix
-		ArrayList<Object[]> asbridMetric = new ArrayList<Object[]>();// 保存ASBR设备id——metric的临时变量
+		long prefix = ip & dmask;
 
-		ArrayList<AsExternalLSA> lsaList = null;// 保存找到的所有宣布能到这个prefix的lsa列表临时变量
-		lsaList = this.mapExternallsa.get(prefix);// 在prefix——external
-													// lsa映射中查找所有宣告这条prefix的lsa
-		if (lsaList != null) {// 如果找到，根据e1，e2型进行处理
-			asbridMetric = getMinMetricAsbr(lsaList);
-		} else {// 如果没找到 循环移位查找
-			int changeCount = 1;
-			while (changeCount < 24) { // 循环移位截止：255.0.0.0
-				changeCount++;
-				dmask <<= 1;
-				prefix = ip & dmask;// 计算新的prefix
-				lsaList = this.mapExternallsa.get(prefix); // 在映射中查找对应external
-															// lsa
-				if (lsaList != null) {// 如果找到了external lsa列表
-					asbridMetric = getMinMetricAsbr(lsaList);// 调用函数分析列表
-					break;
+		// 如果没找到这个prefix，循环移位重新计算prefix再查找
+		Object obj;
+		long nextHop = 0;
+		int changeCount = 0;
+
+		while (changeCount < 24) {
+			prefix = ip & dmask;// 根据ip和新的mask再计算prefix
+			obj = this.mapPrefixBgpItem.get(prefix);// 查找BGP路由表
+
+			if (obj != null) {
+				BgpItem item = (BgpItem) obj;
+				nextHop = item.getNextHop();
+				InterAsLink link = this.mapNextHopAsLink.get(nextHop);
+
+				if (link != null) {
+					Object[] result = new Object[2];
+					result[0] = link.getMyBrId();
+					result[1] = link.getLinkId();
+					return result;
 				}
 			}
-		}// end of else
 
-		return asbridMetric;
+			changeCount++;
+			dmask <<= 1;
+		}
+		return null;
 	}
 
-	/**
-	 * 根据getAsbrId函数找到的所有宣告过这个prefix的external lsa 查找最优lsa
-	 * 
-	 * @param lsaList
-	 *            所有宣告过这个prefix的external lsa列表
-	 * @return 最优lsa的设备id——metric映射
+	/*
+	 * 根据发送路由器ip得到边界路由器id和接口
 	 */
-	public ArrayList<Object[]> getMinMetricAsbr(ArrayList<AsExternalLSA> lsaList) {
-
-		int minMetric = Integer.MAX_VALUE;// 保存最小metric值
-		int size = lsaList.size();// 保存列表大小
-
-		AsExternalLSA templsa = null;// 临时变量，用于遍历过程
-		ArrayList<Object[]> asbrIdMetric = new ArrayList<Object[]>();// 保存结果的临时变量
-		ArrayList<AsExternalLSA> type1List = new ArrayList<AsExternalLSA>();// 保存宣告type1型lsa列表
-		ArrayList<AsExternalLSA> type2List = new ArrayList<AsExternalLSA>();// 保存宣告type2型lsa列表,这里只装所有宣告metric相同的lsa
-
-		for (int i = 0; i < size; i++) {// 循环开始
-			templsa = lsaList.get(i);
-
-			if (templsa.getExternalType() == 1) {// 如果是type1型lsa
-				type1List.add(templsa); // 添加到列表中
-			} else if (templsa.getExternalType() == 2) {// 如果是type2型lsa
-
-				if (templsa.getMetric() < minMetric) { // 如果这个lsa宣告的metric小于记录的最小metric
-
-					if (type2List.size() != 0) { // 如果列表中已经有表项了
-						type2List.clear();// 清空列表
-						type2List.add(templsa);// 将新的更小metric的表项加进去
-					} else {// 否则直接加入列表中
-						type2List.add(templsa);
-					}
-
-					minMetric = templsa.getMetric();// 将记录最小metric的变量重赋值
-
-				} else if (templsa.getMetric() == minMetric) {// 这个lsa宣告的metric与记录最小的metric值相同，即两个type2的lsa5宣告的metric相同，都要保存，过后
-					type2List.add(templsa);
-				}
-			}
-		}// end of for
-
-		size = type1List.size();// 用于记录type1型lsa列表长度
-		Object[] tempArr = new Object[3];// 0——路由器id，1——所宣告的metric（在type2型
-											// 的这里为0），3——forwarding
-											// address是否为0，是——0，否——1
-		if (size != 0) { // 如果存在
-			int metric = 0;
-			long routerId = 0;
-			long forwardAddress = 0;
-
-			for (int i = 0; i < size; i++) {
-				templsa = type1List.get(i);
-				forwardAddress = templsa.getForwardingAddress();// 获得转发地址
-
-				if (forwardAddress == 0) {// 转发地址是ASBR
-					routerId = templsa.getAdvRouter();
-
-				} else {
-					routerId = getRidByForwardAdd(forwardAddress);// 否则从保存AS之间链路的结构中找到forwarding
-																	// address对应的路由器链路
-				}
-
-				metric = templsa.getMetric();// 获得metric，type1型为asbr到所宣告prefix的cost
-
-				if (routerId != 0) {
-					tempArr[0] = routerId;
-					tempArr[1] = metric;
-					tempArr[2] = (forwardAddress == 0) ? 0 : 1;
-					asbrIdMetric.add(tempArr);
-					tempArr = new Object[3];
-				}
-			}
-		} else {
-
-			size = type2List.size();
-			long routerId = 0;
-			long forwardAddress = 0;
-
-			for (int i = 0; i < size; i++) {
-				templsa = type2List.get(i);
-				forwardAddress = templsa.getForwardingAddress();
-
-				if (forwardAddress == 0) {// 转发地址是ASBR
-					routerId = templsa.getAdvRouter();
-				} else {
-					routerId = getRidByForwardAdd(forwardAddress);// 否则从保存AS之间链路的结构中找到forwarding
-																	// address对应的路由器链路
-				}
-
-				if (routerId != 0) {
-					tempArr[0] = routerId;
-					tempArr[1] = 0;// type2的lsa metric在这里都相同了 因此设为0
-					tempArr[2] = (forwardAddress == 0) ? 0 : 1;
-					asbrIdMetric.add(tempArr);
-					tempArr = new Object[3];
-				}
-			}
-		}
-		return asbrIdMetric;
-	}
-
-	/**
-	 * 
-	 * 
-	 * @param forwarding
-	 * @return
-	 */
-	public long getRidByForwardAdd(long forwarding) {
-
-		long ip = 0;
-		// long mask = 0;
-		InterAsLink link = null;
-		int size = this.interAsLinks.size();
-
-		for (int i = 0; i < size; i++) {
-			link = this.interAsLinks.get(i);
-			ip = link.getMyInterIp();
-			// mask = link.getMask();
-
-			if (ip == forwarding) {// 如果在同一网段
-				return link.getNeighborBrId();// 返回邻居路由器id
-			}
+	public long getAsbrRidByIp(long ip) {
+		if (ip <= 0) {
+			return 0;
 		}
 
-		return 0;
-	}
+		Object obj = this.mapIpRouterid.get(ip);
 
-	public int getLinkIdByNextHopId(long nexthopId) {
-		int size = this.interAsLinks.size();
-		InterAsLink link = null;
-
-		for (int i = 0; i < size; i++) {
-			link = this.interAsLinks.get(i);
-
-			if (nexthopId == link.getNeighborBrId()) {
-				return link.getLinkId();// 返回链路id
-			}
+		if (obj == null) {
+			logger.warning("cannot get rid of ip:"
+					+ IPTranslator.calLongToIp(ip));
+			return 0;
 		}
 
-		return 0;
+		return (Long) obj;
 	}
 
 	/**
@@ -319,51 +173,32 @@ public class OspfTopo {
 	 * @param mask
 	 * @return 路由器id
 	 */
-	public long[] getRouterIdByPrefix(long ip, byte mask) {
-		long result[] = new long[2];
+	public long getRouterIdByPrefix(long ip, byte mask) {
 		long dmask = IPTranslator.calByteToLong(mask);
 		long prefix = ip & dmask;
 
-		Object obj = this.mapPrefixRouterId.get(prefix);// 在前缀——路由器id映射中查找路由器id
-
-		if (obj != null) {
-			result[0] = (Long) obj;// 保存路由器id
-			result[1] = prefix;// 保存路由器接口对应网段值
-
-			return result;
-		}
-
-		obj = this.mapExternallsa.get(prefix);// 当是outbound
-												// 和transit流量时，dstInterface无法确定，因此存入dstPrefix
-
-		if (obj != null) {
-			ArrayList<AsExternalLSA> arr = (ArrayList<AsExternalLSA>) obj;
-
-			if (arr.size() > 0) {
-				result[0] = arr.get(0).getAdvRouter();
-				result[1] = prefix;
-				return result;
-			}
-		}
-
-		// 如果没找到这个prefix，循环移位重新计算prefix再查找
+		Object obj;
 		int changeCount = 1;
 
 		while (changeCount < 24) {
-			changeCount++;
-			dmask <<= 1;
 			prefix = ip & dmask;// 根据ip和新的mask再计算prefix
-			obj = this.mapPrefixRouterId.get(prefix);// 再查找
+			obj = this.mapPrefixRouterId.get(prefix);// 在prefix——id映射中查找
 
 			if (obj != null) {// 如果找到了，返回
-				result[0] = (Long) obj;
-				result[1] = prefix;
-
-				return result;
+				return (Long) obj;
 			}
+
+			obj = this.mapPrefixExternalLsa.get(prefix);// 如果没找到在prefix——lsa5中再找一次
+
+			if (obj != null) {// 如果找到了返回
+				AsExternalLSA lsa = (AsExternalLSA) obj;
+				return lsa.getAdvRouter();
+			}
+			changeCount++;
+			dmask <<= 1;
 		}
 
-		return null;
+		return 0;
 	}
 
 	/**
@@ -392,75 +227,6 @@ public class OspfTopo {
 	}
 
 	/**
-	 * @return Returns the interAsLinks.
-	 */
-	public ArrayList<InterAsLink> getInterAsLinks() {
-		return interAsLinks;
-	}
-
-	/**
-	 * @param interAsLinks
-	 *            The interAsLinks to set.
-	 */
-	public void setInterAsLinks(InterAsLink link) {
-		if (link != null) {
-			this.interAsLinks.add(link);
-		}
-	}
-
-	// public int getInterASLinkId(long rid, long ip, long mask) {
-	//
-	// int size = this.interAsLinks.size();
-	//
-	// if (size == 0) {
-	// return 0;
-	// }
-	//
-	// InterAsLink link = null;
-	// ArrayList<InterAsLink> links = new ArrayList<InterAsLink>();
-	//
-	// // get all inter as links belong to this rid
-	// for (int i = 0; i < size; i++) {
-	// link = this.interAsLinks.get(i);
-	//
-	// if (rid == link.getMyBrId()) {
-	// links.add(link);
-	// }
-	// }
-	//
-	// size = links.size();
-	//
-	// if (size == 0) {// if this rid has no inter as link
-	// return 0;
-	// }
-	//
-	// if (size == 1) {// if this rid has only one inter as link,return link id
-	// return links.get(0).getLinkId();
-	// }
-	//
-	// return 0;
-	// }
-
-	public int getInterAsLinkId(long ip) {
-		int size = this.interAsLinks.size();
-		long neighborIp = 0l;
-		long mask = 0;
-
-		InterAsLink link = null;
-
-		for (int i = 0; i < size; i++) {
-			link = this.interAsLinks.get(i);
-			neighborIp = link.getMyInterIp();
-			mask = link.getMask();
-
-			if ((neighborIp & mask) == (ip & mask)) {
-				return link.getLinkId();
-			}
-		}
-		return 0;
-	}
-
-	/**
 	 * @return Returns the mapPrefixRouterId.
 	 */
 	public HashMap<Long, Long> getMapPrefixRouterId() {
@@ -480,8 +246,9 @@ public class OspfTopo {
 	/**
 	 * @return Returns the mapPrefixBgpItem.
 	 */
+	@SuppressWarnings("unchecked")
 	public HashMap<Long, BgpItem> getMapPrefixBgpItem() {
-		return mapPrefixBgpItem;
+		return (HashMap<Long, BgpItem>) mapPrefixBgpItem.clone();
 	}
 
 	/**
@@ -607,75 +374,6 @@ public class OspfTopo {
 		}
 	}
 
-	public Object[] getLinkidByIpInput(long ip, int input) {
-		Object[] result = null;
-		Object rid = mapIpRouterid.get(ip);
-
-		if (rid == null) {
-			logger.warning("router id not found for ip:"
-					+ IPTranslator.calLongToIp(ip));
-			return null;
-		}
-		OspfRouter router = mapRidRouter.get((Long) rid);
-
-		if (router == null) {
-			logger.warning("router not found for ip:"
-					+ IPTranslator.calLongToIp(ip));
-			return null;
-		}
-
-		int linkid = router.getLinkidByInput(input);
-		result = new Object[3];
-		result[0] = rid;// 路由器id
-		result[1] = linkid;// 链路id
-		result[2] = getIpByLinkid(linkid);
-
-		return result;
-	}
-
-	public long getPrefixByLinkid(int linkid) {
-		int size = this.interAsLinks.size();
-		InterAsLink link = null;
-
-		for (int i = 0; i < size; i++) {
-			link = this.interAsLinks.get(i);
-
-			if (link.getLinkId() == linkid) {
-				return link.getMask() & link.getMyInterIp();
-			}
-		}
-		return 0;
-	}
-
-	public long getIpByLinkid(int linkid) {
-		int size = this.interAsLinks.size();
-		InterAsLink link = null;
-
-		for (int i = 0; i < size; i++) {
-			link = this.interAsLinks.get(i);
-
-			if (link.getLinkId() == linkid) {
-				return link.getMyInterIp();
-			}
-		}
-		return 0;
-	}
-
-	public ArrayList<Long> getNeighborIpsOfInterLink() {
-		InterAsLink link = null;
-		int size = this.interAsLinks.size();
-		ArrayList<Long> ips = new ArrayList<Long>();
-
-		for (int i = 0; i < size; i++) {
-			link = this.interAsLinks.get(i);
-
-			if (link.getNeighborBrIp() != 0) {
-				ips.add(link.getNeighborBrIp());
-			}
-		}
-		return ips;
-	}
-
 	/*
 	 * 返回拓扑中路由器数量
 	 */
@@ -687,10 +385,39 @@ public class OspfTopo {
 		return this.allRouterIds.size();
 	}
 
+	/**
+	 * @param mapPrefixExternalLsa
+	 *            The mapPrefixExternalLsa to set.
+	 */
+	public void setMapPrefixExternalLsa(
+			HashMap<Long, AsExternalLSA> mapPrefixExternalLsa) {
+		this.mapPrefixExternalLsa = mapPrefixExternalLsa;
+	}
+
+	/**
+	 * @return Returns the mapPrefixExternalLsa.
+	 */
+	@SuppressWarnings("unchecked")
+	public HashMap<Long, AsExternalLSA> getMapPrefixExternalLsa() {
+		return (HashMap<Long, AsExternalLSA>) mapPrefixExternalLsa.clone();
+	}
+
 	/*
 	 * 返回全网路由器id列表
 	 */
 	public ArrayList<Long> getAllRouterIds() {
 		return this.allRouterIds;
+	}
+
+	/**
+	 * 
+	 * @param nexthop
+	 * @param interLink
+	 */
+	public void setInterAsLinks(long nexthop, InterAsLink interLink) {
+		if (nexthop != 0 && interLink != null) {
+			this.mapNextHopAsLink.put(nexthop, interLink);
+		}
+
 	}
 }

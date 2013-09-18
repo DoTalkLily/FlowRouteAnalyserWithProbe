@@ -29,8 +29,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 .ReentrantLock;
 
-import org.json.JSONException;
-import org.json.JSONObject;
 
 public class ConfigReceiver extends Thread {
 	private Socket client = null;// 连接到本服务器的客户端socket

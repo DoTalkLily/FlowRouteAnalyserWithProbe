@@ -1,4 +1,5 @@
 ﻿package ict.analyser.database;
+
 /**
  * 修改记录：20130515  把目的接口信息存成了源接口信息, 目的和源顺序调过来
  * pstmt.setLong(18, oneFlow.getPath().getSrcInterface());
@@ -14,7 +15,7 @@ import java.util.ArrayList;
 
 public class DBWriter {
 
-	private String sql = "insert into netflow values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
+	private String sql = "insert into netflow values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
 
 	// private int counter = 0;
 	public boolean writeToDB(ArrayList<Flow> flows) {
@@ -52,13 +53,12 @@ public class DBWriter {
 						pstmt.setLong(11, netflow.getDstPrefix());
 						pstmt.setInt(12, netflow.getInput());
 						pstmt.setInt(13, netflow.getOutput());
-						pstmt.setString(14, oneFlow.getPath().getPath());
+						pstmt.setString(14, oneFlow.getPath()
+								.getPathInIpFormat());
 						pstmt.setLong(15, netflow.getFirst());
 						pstmt.setLong(16, netflow.getLast());
-						pstmt.setLong(17, oneFlow.getPath().getDstInterface());
-						pstmt.setLong(18, oneFlow.getPath().getSrcInterface());
-						pstmt.setShort(19, netflow.getProc());
-						
+						pstmt.setShort(17, netflow.getProc());
+
 						conn.setAutoCommit(false);// 重要！不然自动提交
 						pstmt.addBatch();// 用PreparedStatement的批量处理
 						counter++;

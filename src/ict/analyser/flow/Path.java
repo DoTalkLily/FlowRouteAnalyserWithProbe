@@ -20,8 +20,6 @@ import java.util.ArrayList;
 public class Path {
 	private long srcRouterId = 0;// 源路由器
 	private long dstRouterId = 0;// 目的路由器
-	private long srcInterface = 0;// 终端连接的第一条路由器接口prefix
-	private long dstInterface = 0;// 路径在本as内的最后一个路由器接口prefix
 	private int totalCost = Integer.MAX_VALUE;// 整条路径的总cost
 	private ArrayList<Link> links = null;// 域内netflow所经过的所哟link,暂未使用，等链路需要精确到接口级别的时候再使用
 
@@ -233,36 +231,6 @@ public class Path {
 	public void setLinks(ArrayList<Link> links) {
 		this.links.clear();
 		this.links.addAll(links);
-	}
-
-	/**
-	 * @return Returns the srcInterface.
-	 */
-	public long getSrcInterface() {
-		return srcInterface;
-	}
-
-	/**
-	 * @param srcInterface
-	 *            The srcInterface to set.
-	 */
-	public void setSrcInterface(long srcInterface) {
-		this.srcInterface = srcInterface;
-	}
-
-	/**
-	 * @return Returns the dstInterface.
-	 */
-	public long getDstInterface() {
-		return dstInterface;
-	}
-
-	/**
-	 * @param dstInterface
-	 *            The dstInterface to set.
-	 */
-	public void setDstInterface(long dstInterface) {
-		this.dstInterface = dstInterface;
 	}
 
 	/**

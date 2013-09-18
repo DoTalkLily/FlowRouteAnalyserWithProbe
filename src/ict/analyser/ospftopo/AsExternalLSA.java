@@ -18,18 +18,12 @@ package ict.analyser.ospftopo;
  * @author 25hours
  * @version 1.0, 2012-10-18
  */
-public class AsExternalLSA {
-
+public class AsExternalLSA implements Cloneable {
 	private int metric = 0;
-
 	private long advRouter = 0;
-
 	private long linkStateId = 0;
-
 	private long networkMask = 0;
-
 	private int externalType = 0;
-
 	private long forwardingAddress = 0;
 
 	/**

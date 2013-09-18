@@ -310,7 +310,7 @@ public class Netflow {
 	 * 
 	 *
 	 */
-	public void getDetail() {
+	public void printDetail() {
 
 		System.out.println(" flow detail  " + "router ip:"
 				+ IPTranslator.calLongToIp(routerIP) + " version:" + version

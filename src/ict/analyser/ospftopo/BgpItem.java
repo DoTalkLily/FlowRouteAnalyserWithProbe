@@ -32,11 +32,11 @@ import java.util.ArrayList;
  * @author Lily
  * @version 1.0, 2013-9-6
  */
-public class BgpItem {
+public class BgpItem implements Cloneable {
 	private int origin = 0;// origin属性
 	private int weight = 0;// cisco 专用越大越优先
 	private int length = 0;// mask中1的个数
-	private long metric = 0;// 可能会有 4,294,967,294. 越小越优先
+	private long med = 0;// 可能会有 4,294,967,294. 越小越优先
 	private long prefix = 0;// 宣告前缀
 	private long nextHop = 0;// 下一跳地址
 	private int localProference = 0;// 本地优先级属性
@@ -60,8 +60,8 @@ public class BgpItem {
 	/**
 	 * @return Returns the metric.
 	 */
-	public long getMetric() {
-		return metric;
+	public long getMed() {
+		return med;
 	}
 
 	/**
@@ -69,7 +69,7 @@ public class BgpItem {
 	 *            The metric to set.
 	 */
 	public void setMetric(int metric) {
-		this.metric = metric;
+		this.med = metric;
 	}
 
 	/**
@@ -167,7 +167,7 @@ public class BgpItem {
 	 *            The metric to set.
 	 */
 	public void setMetric(long metric) {
-		this.metric = metric;
+		this.med = metric;
 	}
 
 }

@@ -12,6 +12,7 @@ import ict.analyser.flow.TrafficLink;
 import ict.analyser.isistopo.IsisRouter;
 import ict.analyser.isistopo.IsisTopo;
 import ict.analyser.isistopo.Reachability;
+import ict.analyser.ospftopo.AsExternalLSA;
 import ict.analyser.ospftopo.BgpItem;
 import ict.analyser.ospftopo.InterAsLink;
 import ict.analyser.ospftopo.Link;
@@ -37,7 +38,7 @@ import org.json.JSONObject;
 
 public class FileProcesser {
 	private long pid = 0;
-	private boolean isBgpChanged = true;// 标记本周期bgp信息是否发生改变
+	private boolean isOuterChanged = true;// 标记本周期bgp信息是否发生改变
 	private boolean isTopoChanged = true;// 标记本周期拓扑是否发生改变
 	private Logger logger = Logger.getLogger(FileProcesser.class.getName());// 注册一个logger
 
@@ -64,6 +65,11 @@ public class FileProcesser {
 			int globalAnalysisPort = jObject.getInt("globalAnalysisPort");
 			String protocal = jObject.getString("protocol");
 			String globalAnalysisIP = jObject.getString("globalAnalysisIP");
+			JSONArray portArr = jObject.getJSONArray("observePorts");
+			int size = portArr.length();
+
+			for (int i = 0; i < size; i++) {
+			}
 
 			if (protocal != null && interval > 1 && globalAnalysisIP != null
 					&& globalAnalysisPort > 0 && inAdvance > 0 && topN > 0
@@ -87,7 +93,7 @@ public class FileProcesser {
 	// parameters:
 	// The location of JSON file
 	public OspfTopo readOspfTopo(String filePath) {
-		this.isBgpChanged = true;// 默认bgp信息发生改变
+		this.isOuterChanged = true;// 默认bgp信息发生改变
 		this.isTopoChanged = true;// 默认拓扑发生改变
 
 		String topoString = "";
@@ -115,37 +121,64 @@ public class FileProcesser {
 			} else {
 				topo = processTopo(jObject);
 
+				// 如果拓扑解析错误，标记拓扑没有改变，用原来的拓扑
 				if (topo == null) {
-					logger.warning("topo process failed!");
+					logError("topo process failed!");
+					return null;
 				}
 			}
 
+			// bgp信息和external lsa信息，两者同步变化
 			HashMap<Long, BgpItem> mapPrefixBgpItem = null;
+			HashMap<Long, AsExternalLSA> mapPrefixLsa5 = null;
 
-			if (!jObject.has("BGP")) {
-				this.isBgpChanged = false;
-				logger.info("bgp not changed!pid:" + pid);
+			if (!jObject.has("OuterInfo")) {
+				this.isOuterChanged = false;
+				logger.info("outer info not changed!pid:" + pid);
 			} else {
-				mapPrefixBgpItem = processBgp(jObject);
+				JSONObject outerInfo = jObject.getJSONObject("OuterInfo");
 
-				if (mapPrefixBgpItem != null) {
-					if (topo == null) {// 如果拓扑没改变，则只用前缀——bgp条目映射初始化拓扑
-						topo = new OspfTopo(mapPrefixBgpItem);
-					} else { // 拓扑改变，将映射关系赋值给拓扑
-						topo.setMapPrefixBgpItem(mapPrefixBgpItem);
-					}
-				} else {
-					logger.warning("bgp process failed!");
+				if (!outerInfo.has("BGP") || !outerInfo.has("ExternalLsa")) {
+					logError("bgp info or lsa5 info is null!pid:" + pid);
+					return null;
 				}
-			}
 
+				mapPrefixBgpItem = processBgp(outerInfo.getJSONArray("BGP"));
+				mapPrefixLsa5 = processExternalLsa(outerInfo
+						.getJSONArray("ExternalLsa"));
+
+				// 只有在json解析出错的情况下才会返回空,标记它为改变
+				if (mapPrefixBgpItem == null || mapPrefixLsa5 == null) {
+					logError("outer info process failed or one attribute is null");
+					return null;
+				}
+
+				// 如果
+				if (mapPrefixBgpItem.size() == 0 && mapPrefixLsa5.size() == 0) {
+					logError("bgp info and lsa5 info are null which should be given");
+					return null;
+				}
+
+				// 如果拓扑信息没改变，即文件中没有“Topo”一块，这里topo是没初始化的；用解析的两个结构初始化，因为参数为空的构造函数要多初始化多个无用变量
+				if (topo == null) {
+					topo = new OspfTopo(false);
+				}
+				topo.setMapPrefixBgpItem(mapPrefixBgpItem);
+				topo.setMapPrefixExternalLsa(mapPrefixLsa5);
+			}
 			return topo;
 		} catch (IOException e) {
-			e.printStackTrace();
+			logError(e.toString());
 		} catch (JSONException e) {
-			e.printStackTrace();
+			logError(e.toString());
 		}
 		return null;
+	}
+
+	private void logError(String msg) {
+		logger.warning(msg);
+		this.isTopoChanged = false;
+		this.isOuterChanged = false;
 	}
 
 	public OspfTopo processTopo(JSONObject jObject) {
@@ -165,7 +198,7 @@ public class FileProcesser {
 		String nRouterId = null;
 		OspfRouter router = null;
 		String interfaceIP = null;
-		OspfTopo topo = new OspfTopo();
+		OspfTopo topo = new OspfTopo(true);
 		// pid
 		topo.setPeriodId(this.pid);
 		try {
@@ -218,18 +251,20 @@ public class FileProcesser {
 			// stubs
 			JSONArray stubs = topoObj.getJSONArray("stubs");
 			size = stubs.length();
+
 			for (int i = 0; i < size; i++) {
 				JSONObject stub = stubs.getJSONObject(i);
-				routerId = stub.getString("routerId");
-				prefix = stub.getLong("prefix");
 				mask = stub.getString("mask");
+				prefix = stub.getLong("prefix");
+				routerId = stub.getString("routerId");
+
 				if (routerId != null && prefix != 0 && mask != null) {
 					topo.setMapPrefixRouterId(prefix,
 							IPTranslator.calIPtoLong(routerId));
 				}
 			}
 			// asbr
-			JSONArray asbrs = topoObj.getJSONArray("asbr");
+			JSONArray asbrs = topoObj.getJSONArray("InterLink");
 			rid = 0;
 			ip = 0;
 			int input = 0;
@@ -242,15 +277,14 @@ public class FileProcesser {
 			for (int i = 0; i < asbrs.length(); i++) {
 				interLink = new InterAsLink();
 				JSONObject asbr = asbrs.getJSONObject(i);
-				linkId = asbr.getInt("linkId");
-				routerId = asbr.getString("routerId");
-				interfaceIP = asbr.getString("interfaceIP");
 				mask = asbr.getString("mask");
-				nRouterId = asbr.getString("nRouterId");
-				ipstr = asbr.getString("nInterfaceIP");
-				nAsNumber = asbr.getInt("nAsNumber");
+				linkId = asbr.getInt("linkId");
 				metric = asbr.getInt("metric");
-				input = asbr.getInt("input");
+				nAsNumber = asbr.getInt("nAsNumber");
+				routerId = asbr.getString("routerId");
+				ipstr = asbr.getString("nInterfaceIP");
+				nRouterId = asbr.getString("nRouterId");
+				interfaceIP = asbr.getString("interfaceIP");
 
 				if (linkId != 0 && routerId != null && interfaceIP != null
 						&& mask != null && nRouterId != null && nAsNumber != 0
@@ -271,7 +305,7 @@ public class FileProcesser {
 					rid = IPTranslator.calIPtoLong(nRouterId);// 这里“nRouterId”是本as的asbr的id
 					interLink.setNeighborBrId(rid);
 					// nInterfaceIP
-					ip = IPTranslator.calIPtoLong(ipstr);// 这里的“nInterfaceIP”是本as的asbr的接口ip
+					ip = IPTranslator.calIPtoLong(ipstr);// 这里的“nInterfaceIP”是邻居as的asbr的接口ip
 					interLink.setNeighborBrIp(ip);
 					// nAsNumber
 					interLink.setNeighborAS(nAsNumber);
@@ -282,9 +316,7 @@ public class FileProcesser {
 
 					topo.setMapIpRouterid(interLink.getMyInterIp(),
 							interLink.getMyBrId());// 域内as内的所有ip——rid映射
-					topo.setMapAsbrIpRouterId(interLink.getMyInterIp(),
-							interLink.getMyBrId(), input, linkId);// 设置边界路由器ip——id映射
-					topo.setInterAsLinks(interLink);// 设置边界链路
+					topo.setInterAsLinks(interLink.getNeighborBrIp(), interLink);// 设置边界链路
 					topo.setMapASBRIpLinkId(interLink.getMyInterIp(), linkId);// 边界路由器ip——链路ip映射，两端的ip都存
 					topo.setMapASBRIpLinkId(interLink.getNeighborBrIp(), linkId);
 				}
@@ -296,7 +328,7 @@ public class FileProcesser {
 		return null;
 	}
 
-	public HashMap<Long, BgpItem> processBgp(JSONObject jObject) {
+	public HashMap<Long, BgpItem> processBgp(JSONArray bgpObj) {
 		int len = 0;
 		int origin = 0;
 		int metric = 0;
@@ -311,7 +343,6 @@ public class FileProcesser {
 
 		try {
 			// BGP
-			JSONArray bgpObj = jObject.getJSONArray("BGP");
 			int asSize = 0;
 			int itemSize = bgpObj.length();
 			BgpItem item = null;
@@ -331,7 +362,7 @@ public class FileProcesser {
 				weight = node.getInt("weight");
 				origin = node.getInt("origin");
 				localPreference = node.getInt("localPreference");
-				metric = node.getInt("metric");
+				metric = node.getInt("med");
 				pathArr = node.getJSONArray("aspath");
 				asSize = pathArr.length();
 
@@ -374,6 +405,52 @@ public class FileProcesser {
 		return null;
 	}
 
+	private HashMap<Long, AsExternalLSA> processExternalLsa(
+			JSONArray externalLsa) {
+
+		int metric;
+		int externalType;
+		long prefix;
+		String mask;
+		String nexthop;
+		String routerId;
+		String prefixStr;
+		AsExternalLSA lsa;
+		HashMap<Long, AsExternalLSA> mapPrefixLsa = new HashMap<Long, AsExternalLSA>();
+
+		int size = externalLsa.length();
+		try {
+			for (int j = 0; j < size; j++) {
+				JSONObject asExternalObj;
+				asExternalObj = externalLsa.getJSONObject(j);
+
+				lsa = new AsExternalLSA();
+				metric = asExternalObj.getInt("metric");
+				mask = asExternalObj.getString("networkMask");
+				routerId = asExternalObj.getString("advRouter");
+				prefixStr = asExternalObj.getString("linkStateId");
+				externalType = asExternalObj.getInt("externalType");
+				nexthop = asExternalObj.getString("forwardingAddress");
+
+				if (routerId != null && prefixStr != null && mask != null
+						&& externalType != 0 && nexthop != null) {
+					lsa.setAdvRouter(IPTranslator.calIPtoLong(routerId)); // advRouter
+					prefix = IPTranslator.calIPtoLong(prefixStr);
+					lsa.setLinkStateId(prefix); // linkStateId
+					lsa.setNetworkMask(IPTranslator.calIPtoLong(mask)); // networkMask
+					lsa.setExternalType(externalType); // externalType
+					lsa.setMetric(metric); // metric
+					lsa.setForwardingAddress(IPTranslator.calIPtoLong(nexthop)); // forwardingAddress
+					mapPrefixLsa.put(prefix, lsa);
+				}
+			}
+			return mapPrefixLsa;
+		} catch (JSONException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
 	/*
 	 * 如果两个item宣告了到达同一个prefix 根据各种规则选一个最优的
 	 */
@@ -398,8 +475,8 @@ public class FileProcesser {
 			return (item1.getOrigin() > item2.getOrigin()) ? item2 : item1;// 越小越好
 		}
 
-		if (item1.getMetric() != item2.getMetric()) {// metric
-			return (item1.getMetric() > item2.getMetric()) ? item2 : item1;// 越小越好
+		if (item1.getMed() != item2.getMed()) {// med
+			return (item1.getMed() > item2.getMed()) ? item2 : item1;// 越小越好
 		}
 
 		// 这里有待扩展…… 13条中7-13条，扩展前，还不能确定唯一一条 就返回第一条
@@ -759,8 +836,8 @@ public class FileProcesser {
 	/**
 	 * @return Returns the isBgpChanged.
 	 */
-	public boolean isBgpChanged() {
-		return isBgpChanged;
+	public boolean isOuterInfoChanged() {
+		return isOuterChanged;
 	}
 
 	/**

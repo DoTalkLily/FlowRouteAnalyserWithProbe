@@ -15,13 +15,9 @@ import ict.analyser.netflow.Netflow;
  * @version 1.0, 2012-10-23
  */
 public class Flow {
-
 	private long pid = 0;// 计算周期
-
-	private Path path = null;// 路径
-
 	private int direction = 0;
-
+	private Path path = null;// 路径
 	private Netflow netflow = null;// flow中包含的netflow对象
 
 	public Flow(long pid, Netflow netflow, Path path, int direction) {
