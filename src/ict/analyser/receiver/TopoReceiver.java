@@ -140,10 +140,16 @@ public class TopoReceiver extends Thread {
 		// 缓冲区
 		byte[] buf = new byte[bufferSize];// 开辟一个接收文件缓冲区
 		int passedlen = 0;// 记录传输长度i
+		int totalLen = this.fileIn.readInt();
+
+		if (totalLen == 0) {
+			return;
+		}
+
 		// 获取文件
 		int read = 0;
 
-		while (true) {
+		while (passedlen < totalLen) {
 			read = this.fileIn.read(buf);
 			passedlen += read;
 
@@ -155,7 +161,14 @@ public class TopoReceiver extends Thread {
 		}
 
 		logger.info("拓扑文件接收了" + passedlen + "B");
-		writer.println("ack");// 向服务器发送ack
+
+		String protocal = processer.getProtocol();
+
+		if (protocal == null) {// 根据是否有协议类型来判断是否已经收到过配置文件了，如果没收到配置文件，发送awake给web发布
+			writer.print("awake\n");
+		} else {
+			writer.println("ack\n");// 向服务器发送ack
+		}
 	}
 
 	/**

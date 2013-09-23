@@ -11,11 +11,9 @@ import ict.analyser.tools.FileProcesser;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.FileOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
@@ -24,11 +22,6 @@ import java.net.UnknownHostException;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-.ReentrantLock;
-
 
 public class ConfigReceiver extends Thread {
 	private Socket client = null;// 连接到本服务器的客户端socket
@@ -102,10 +95,15 @@ public class ConfigReceiver extends Thread {
 		byte[] buf = new byte[BUFFER_SIZE];// 开辟一个接收文件缓冲区
 
 		int passedlen = 0;// 记录传输长度
+		int totalLen = this.fileIn.readInt();
 
+		if (totalLen == 0) {
+			return;
+		}
+
+		int read = 0;
 		// 获取文件
-		while (true) {
-			int read = 0;
+		while (passedlen < totalLen) {
 			if (this.fileIn != null) {
 				read = this.fileIn.read(buf);
 			}
@@ -116,8 +114,7 @@ public class ConfigReceiver extends Thread {
 			this.fileOut.write(buf, 0, read);
 		}
 		System.out.println("配置文件接收了" + passedlen + "B");
-		// }
-		writer.println("ack");// 向服务器发送ack
+		writer.println("ack\n");// 向服务器发送ack
 	}
 
 	/**
@@ -146,16 +143,17 @@ public class ConfigReceiver extends Thread {
 	/**
 	 * 将接收并保存的配置文件解析为ConfigData
 	 */
-	public void processConfig(){
+	public void processConfig() {
 		locker.lock();
 		try {
-				this.configData = FileProcesser.readConfigData(SAVE_PATH);// 调用处理config文件函数 写在FileProcesser里
-				condition.signalAll();// 发送信号唤醒等待
+			this.configData = FileProcesser.readConfigData(SAVE_PATH);// 调用处理config文件函数
+																		// 写在FileProcesser里
+			condition.signalAll();// 发送信号唤醒等待
 		} finally {
 			locker.unlock();
 		}
 	}
-		
+
 	/**
 	 * @return Returns the
 	 *         configData.如果configData这时候被锁了，就会阻塞调用getConfigData的函数，直到这个锁被unlock为止

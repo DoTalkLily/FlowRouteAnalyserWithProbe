@@ -12,6 +12,8 @@
  */
 package ict.analyser.config;
 
+import java.util.HashMap;
+
 /**
  * {"protocol":"ospf","interval":2,"topN":10,"globalAnalysisIP":"127.0.0.1",
  * "inAdvance":8,"globalAnalysisPort":33399,"samplingRate":3000}
@@ -27,6 +29,23 @@ public class ConfigData {
 	private int globalAnalysisPort = 0;// 综合分析接收结果的端口号
 	private String protocol = "ospf";// 协议类型
 	private String globalAnalysisIP = null;// 综合分析接收结果的ip
+	private HashMap<String, Integer[]> mapProtocalPortsArr = null;// 协议名称——端口号映射
+
+	/**
+	 * @return Returns the mapProtocalPortsArr.
+	 */
+	public HashMap<String, Integer[]> getMapProtocalPortsArr() {
+		return mapProtocalPortsArr;
+	}
+
+	/**
+	 * @param mapProtocalPortsArr
+	 *            The mapProtocalPortsArr to set.
+	 */
+	public void setMapProtocalPortsArr(
+			HashMap<String, Integer[]> mapProtocalPortsArr) {
+		this.mapProtocalPortsArr = mapProtocalPortsArr;
+	}
 
 	/**
 	 * @return Returns the globalAnalysisIP.

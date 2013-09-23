@@ -65,11 +65,6 @@ public class FileProcesser {
 			int globalAnalysisPort = jObject.getInt("globalAnalysisPort");
 			String protocal = jObject.getString("protocol");
 			String globalAnalysisIP = jObject.getString("globalAnalysisIP");
-			JSONArray portArr = jObject.getJSONArray("observePorts");
-			int size = portArr.length();
-
-			for (int i = 0; i < size; i++) {
-			}
 
 			if (protocal != null && interval > 1 && globalAnalysisIP != null
 					&& globalAnalysisPort > 0 && inAdvance > 0 && topN > 0
@@ -82,6 +77,32 @@ public class FileProcesser {
 				configData.setGlobalAnalysisIP(globalAnalysisIP);
 				configData.setGlobalAnalysisPort(globalAnalysisPort);
 			}
+
+			HashMap<String, Integer[]> mapProtocalPort = new HashMap<String, Integer[]>();
+			JSONArray observePorts = jObject.getJSONArray("observePorts");
+			int size = observePorts.length();
+			JSONObject obj;
+			JSONArray portArr;
+			Integer[] ports;
+			int portSize = 0;
+
+			for (int i = 0; i < size; i++) {
+				obj = observePorts.getJSONObject(i);
+				protocal = obj.getString("protocal");
+				portArr = obj.getJSONArray("ports");
+				portSize = portArr.length();
+				ports = new Integer[portSize];
+
+				for (int j = 0; j > portSize; j++) {
+					ports[i] = portArr.getInt(i);
+				}
+
+				if (portSize != 0) {
+					mapProtocalPort.put(protocal, ports);
+				}
+			}
+			configData.setMapProtocalPortsArr(mapProtocalPort);
+
 		} catch (JSONException e) {
 			e.printStackTrace();
 		} catch (IOException e) {
