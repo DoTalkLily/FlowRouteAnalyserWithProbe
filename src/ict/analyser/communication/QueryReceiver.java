@@ -1,4 +1,4 @@
-package ict.analyser.receiver;
+package ict.analyser.communication;
 
 /**
  * 修改记录: 20130515  bytes字段从数据库读用getLong

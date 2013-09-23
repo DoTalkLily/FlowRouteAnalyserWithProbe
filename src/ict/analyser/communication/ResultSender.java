@@ -1,4 +1,4 @@
-package ict.analyser.common;
+package ict.analyser.communication;
 
 /*
  * Filename: ResultSender.java

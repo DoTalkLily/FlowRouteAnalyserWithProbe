@@ -29,22 +29,21 @@ public class ConfigData {
 	private int globalAnalysisPort = 0;// 综合分析接收结果的端口号
 	private String protocol = "ospf";// 协议类型
 	private String globalAnalysisIP = null;// 综合分析接收结果的ip
-	private HashMap<String, Integer[]> mapProtocalPortsArr = null;// 协议名称——端口号映射
+	private HashMap<Integer, String> mapPortProtocal = null;// 端口号——协议名映射，虽然这种存储方式可能多存重复协议名字，但是方便端口号查协议名的查找，这里元素数量非常少
 
 	/**
-	 * @return Returns the mapProtocalPortsArr.
+	 * @return Returns the mapPortProtocal.
 	 */
-	public HashMap<String, Integer[]> getMapProtocalPortsArr() {
-		return mapProtocalPortsArr;
+	public HashMap<Integer, String> getMapPortProtocal() {
+		return mapPortProtocal;
 	}
 
 	/**
-	 * @param mapProtocalPortsArr
-	 *            The mapProtocalPortsArr to set.
+	 * @param mapPortProtocal
+	 *            The mapPortProtocal to set.
 	 */
-	public void setMapProtocalPortsArr(
-			HashMap<String, Integer[]> mapProtocalPortsArr) {
-		this.mapProtocalPortsArr = mapProtocalPortsArr;
+	public void setMapPortProtocal(HashMap<Integer, String> mapPortProtocal) {
+		this.mapPortProtocal = mapPortProtocal;
 	}
 
 	/**

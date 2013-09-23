@@ -6,16 +6,16 @@
 package ict.analyser.analysis;
 
 import ict.analyser.common.Constant;
-import ict.analyser.common.ResultSender;
+import ict.analyser.communication.ConfigReceiver;
+import ict.analyser.communication.FlowReceiver;
+import ict.analyser.communication.QueryReceiver;
+import ict.analyser.communication.ResultSender;
+import ict.analyser.communication.TopoReceiver;
 import ict.analyser.config.ConfigData;
 import ict.analyser.flow.TrafficLink;
 import ict.analyser.isistopo.IsisTopo;
 import ict.analyser.netflow.Netflow;
 import ict.analyser.ospftopo.OspfTopo;
-import ict.analyser.receiver.ConfigReceiver;
-import ict.analyser.receiver.FlowReceiver;
-import ict.analyser.receiver.QueryReceiver;
-import ict.analyser.receiver.TopoReceiver;
 import ict.analyser.tools.FileProcesser;
 
 import java.util.ArrayList;
@@ -154,6 +154,9 @@ public class MainProcesser {
 
 		int message = -1;
 
+		this.routeAnalyser.setMapPortProtocal(this.configData
+				.getMapPortProtocal()); // 将端口号——协议名映射赋值给分析线程
+
 		if (this.protocol.equalsIgnoreCase("ospf")) {
 			message = ospfProcess();
 		} else {
@@ -208,8 +211,6 @@ public class MainProcesser {
 			this.isisTopo.resetTrafficData(); // 否则用原来拓扑对象，但是拓扑对象中id_trafficlink映射的link上的业务流量大小要置0
 		}
 
-		this.routeAnalyser.setMapLidTlink(this.isisTopo.getMapLidTlink());
-
 		if (PID_INDEX == 1) { // 第一个周期提前计算路径
 			routeAnalyser.isisPreCalculate();
 		} else if (PID_INDEX > 1 && this.topoReceiver.isTopoChanged()) {// 第二周期以后如果拓扑发生改变才需要提前计算路径
@@ -261,8 +262,6 @@ public class MainProcesser {
 		// 开始统计
 		this.ipStatistics.setAS(this.ospfTopo.getAsNumber());
 		this.ipStatistics.setFlows(this.netflows);
-		this.ipStatistics.setNeighborAsIps(this.ospfTopo
-				.getNeighborIpsOfInterLink());
 		this.ipStatisticThread = new Thread(this.ipStatistics);
 		this.ipStatisticThread.start();
 		// 开始分析flow路径
@@ -318,10 +317,6 @@ public class MainProcesser {
 					this.configData.getGlobalAnalysisIP(), filePath);
 			new Thread(resultSender).start();// 发送给综合分析板卡
 		}
-
-		if (this.ospfTopo != null) {
-			this.ospfTopo.resetTrafficData();
-		}
 	}
 
 	private void processDeviceFault() {
@@ -330,22 +325,19 @@ public class MainProcesser {
 		if (this.protocol.equals("ospf")) {
 			this.ospfTopo = this.topoReceiver.getOspfTopo();// 得到分析后的ospf拓扑对象
 
-			if (this.ospfTopo == null || this.ospfTopo.getMapLidTlink() == null) {
+			if (this.ospfTopo == null) {
 				reportPidToGlobal();
 				return;
 			}
-
-			this.mapLidTlink = this.ospfTopo.getMapLidTlink();
 
 		} else {
 			this.isisTopo = this.topoReceiver.getIsisTopo();// 得到分析后的isis拓扑对象
 
-			if (this.isisTopo == null || this.isisTopo.getMapLidTlink() == null) {
+			if (this.isisTopo == null) {
 				reportPidToGlobal();
 				return;
 			}
 
-			this.mapLidTlink = this.isisTopo.getMapLidTlink();
 		}
 		reportTopoToGlobal();
 	}

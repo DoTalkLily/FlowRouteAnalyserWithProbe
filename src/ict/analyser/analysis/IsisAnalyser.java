@@ -193,8 +193,8 @@ public class IsisAnalyser implements Runnable {
 				logger.info("srcRid  ==  dstRid,create a new path with cost 0");
 				path = new Path();
 				path.setTotalCost(0);
-				path.setSrcInterface(srcInterface);
-				path.setDstInterface(dstInterface);
+				// path.setSrcInterface(srcInterface);
+				// path.setDstInterface(dstInterface);
 				path.setSrcRouter(srcRouterId);
 				// continue;
 			} else {
@@ -221,8 +221,8 @@ public class IsisAnalyser implements Runnable {
 
 			// 将源和目的路由器存入列表，下一个周期提前计算最短路径的源和目的对列表
 			if (srcRouterId != dstRouterId) {
-				path.setSrcInterface(srcInterface);// 设置源和目的路由器接口prefix
-				path.setDstInterface(dstInterface);
+				// path.setSrcInterface(srcInterface);// 设置源和目的路由器接口prefix
+				// path.setDstInterface(dstInterface);
 			}
 
 			// 以下为调试输出
@@ -488,10 +488,10 @@ public class IsisAnalyser implements Runnable {
 		TrafficLink link = this.mapLidTlink.get(linkId);
 
 		if (link != null) {
-			link.addTraffic(bytes, port);
+			// link.addTraffic(bytes, port);
 		} else {
 			link = new TrafficLink(linkId);
-			link.addTraffic(bytes, port);
+			// link.addTraffic(bytes, port);
 			this.mapLidTlink.put(linkId, link);
 		}
 	}

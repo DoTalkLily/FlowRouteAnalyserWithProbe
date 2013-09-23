@@ -1,6 +1,6 @@
-package ict.analyser.receiver;
+package ict.analyser.communication;
 /**
- * 修改记录：20130515  bytes字段从数据库读改成getLong
+ * 修改记录：20130515  bytes字段从数据库读用getLong
  */
 import ict.analyser.tools.IPTranslator;
 
@@ -23,7 +23,7 @@ import org.json.JSONObject;
 //import java.net.ServerSocket;
 //import java.net.Socket;
 
-public class CopyOfQueryReceiver extends Thread {
+public class Copy_2_of_QueryReceiver extends Thread {
 	private static int lport = 3333;// 服务器监听的端口号
 	private static int sport = 3334;// 向client发送的端口号
 	// private ServerSocket server = null;
@@ -52,7 +52,7 @@ public class CopyOfQueryReceiver extends Thread {
 	private Statement stmt = null;
 	private ResultSet rs = null;
 
-	public CopyOfQueryReceiver() {
+	public Copy_2_of_QueryReceiver() {
 		try {
 			// server = new ServerSocket(port);
 			recvSocket = new DatagramSocket(lport);

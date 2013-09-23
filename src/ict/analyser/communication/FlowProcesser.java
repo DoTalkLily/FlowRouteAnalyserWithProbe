@@ -4,7 +4,7 @@
  * Description: 
  * Author: 25hours
  */
-package ict.analyser.receiver;
+package ict.analyser.communication;
 
 import ict.analyser.netflow.Netflow;
 

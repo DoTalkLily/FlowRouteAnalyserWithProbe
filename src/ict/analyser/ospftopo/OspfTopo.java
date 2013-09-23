@@ -6,14 +6,10 @@
  */
 package ict.analyser.ospftopo;
 
-import ict.analyser.flow.TrafficLink;
 import ict.analyser.tools.IPTranslator;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.logging.Logger;
 
 /**
@@ -26,6 +22,7 @@ public class OspfTopo {
 	private long periodId = 0;// 周期id，标记当前是第几周期
 	private int asNumber = 0;// 拓扑所在AS号
 	private ArrayList<Long> asbrIds = null;// 保存全部边界路由器id
+	private ArrayList<Integer> linkIds = null;// 保存全部链路id的数组
 	private ArrayList<Long> allRouterIds = null;// 保存全网路由器id列表
 	private HashMap<Long, Long> mapIpRouterid = null;// 保存本AS内路由器ip——id映射
 	private HashMap<Long, OspfRouter> mapRidAsbr = null;// 拓扑中边界路由器id——路由器对象映射
@@ -33,7 +30,6 @@ public class OspfTopo {
 	private HashMap<Long, Integer> mapASBRIpLinkid = null;// ASBR路由器开启监听netflow接口的ip地址和linkid
 	private HashMap<Long, OspfRouter> mapRidRouter = null;// 路由器id——Router映射
 	private HashMap<Long, BgpItem> mapPrefixBgpItem = null;// prefix和宣告这个prefix的bgp报文
-	private HashMap<Integer, TrafficLink> mapLidTlink = null;// linkid——TrafficLink
 	private HashMap<Long, InterAsLink> mapNextHopAsLink = null;// nexthop——边界链路对象映射
 	private HashMap<Long, AsExternalLSA> mapPrefixExternalLsa = null;// 前缀——LSA5映射
 	private Logger logger = Logger.getLogger(OspfTopo.class.getName());// 注册一个logger
@@ -44,13 +40,13 @@ public class OspfTopo {
 		}
 
 		this.asbrIds = new ArrayList<Long>();
+		this.linkIds = new ArrayList<Integer>();
 		this.allRouterIds = new ArrayList<Long>();
 		this.mapIpRouterid = new HashMap<Long, Long>();
 		this.mapRidAsbr = new HashMap<Long, OspfRouter>();
 		this.mapPrefixRouterId = new HashMap<Long, Long>();
 		this.mapRidRouter = new HashMap<Long, OspfRouter>();
 		this.mapASBRIpLinkid = new HashMap<Long, Integer>();
-		this.mapLidTlink = new HashMap<Integer, TrafficLink>();
 		this.mapNextHopAsLink = new HashMap<Long, InterAsLink>();
 		this.mapPrefixExternalLsa = new HashMap<Long, AsExternalLSA>();
 	}
@@ -66,15 +62,7 @@ public class OspfTopo {
 			return;
 		}
 
-		TrafficLink link = new TrafficLink(id);
-		this.mapLidTlink.put(id, link);
-	}
-
-	/**
-	 * @return Returns the mapLidTlink.
-	 */
-	public HashMap<Integer, TrafficLink> getMapLidTlink() {
-		return mapLidTlink;
+		this.linkIds.add(id);
 	}
 
 	/**
@@ -202,28 +190,10 @@ public class OspfTopo {
 	}
 
 	/**
-	 * 每周期结束清空map id——traffic对应的traffic信息
+	 * @return Returns the linkIds.
 	 */
-	public void resetTrafficData() {
-		if (this.mapLidTlink == null) {
-			return;
-		}
-
-		TrafficLink link = null;
-		Map.Entry<Integer, TrafficLink> entry = null;
-		Iterator<Entry<Integer, TrafficLink>> iter = this.mapLidTlink
-				.entrySet().iterator();
-
-		while (iter.hasNext()) {
-			entry = iter.next();
-			link = entry.getValue();
-
-			if (link == null) {
-				continue;
-			}
-
-			link.resetValues();
-		}
+	public ArrayList<Integer> getLinkIds() {
+		return linkIds;
 	}
 
 	/**

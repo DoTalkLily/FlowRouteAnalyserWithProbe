@@ -36,6 +36,8 @@ public class RouteAnalyser {
 	private HashMap<String, Path> foundPath = null;// key是源路由器id+“_”+目的路由器id
 	private ArrayList<OspfAnalyser> ospfAnalysers = null;// 维护一个所有正在运行的分析线程的列表
 	private ArrayList<IsisAnalyser> isisAnalysers = null;// 维护一个所有正在运行的分析线程的列表
+	private HashMap<String, Long> mapProtocalBytes = null;// 赋值给每个TrafficLink的映射
+	private HashMap<Integer, String> mapPortProtocal = null;// 维护一个端口号——协议名字映射
 	private HashMap<Integer, TrafficLink> mapLidTlink = null;// linkid——traffic
 	private Logger logger = Logger.getLogger(RouteAnalyser.class.getName());// 注册一个logger
 
@@ -233,17 +235,24 @@ public class RouteAnalyser {
 			id = entry.getKey();
 			toAdd = entry.getValue();
 
-			if (id != 0 && toAdd != null) {
+			if (id != 0 && toAdd != null && mapLidTlink.containsKey(id)) {
 				inArr = this.mapLidTlink.get(id);
 
 				if (inArr == null) {
-					logger.warning("link id:" + id + "  not in topo");
-					continue;
+					this.mapLidTlink.put(id, toAdd);
+				} else {
+					inArr.combineTraffic(toAdd);// 有则累加
 				}
-
-				inArr.combineTraffic(toAdd);// 有则累加
 			}
 		}
+	}
+
+	/**
+	 * @return Returns the mapProtocalBytes.
+	 */
+	@SuppressWarnings("unchecked")
+	public HashMap<String, Long> getMapProtocalBytes() {
+		return (HashMap<String, Long>) mapProtocalBytes.clone();
 	}
 
 	private int index = 0;// 当前已经分析到的路由器id在列表中的索引
@@ -265,7 +274,7 @@ public class RouteAnalyser {
 		}
 
 		this.ospfTopo = topo;
-		setMapLidTlink(topo.getMapLidTlink());
+		setMapLidTlink(topo.getLinkIds());
 	}
 
 	public void setTopo(IsisTopo topo) {
@@ -296,15 +305,54 @@ public class RouteAnalyser {
 	/**
 	 * @return Returns the mapLidTlink.
 	 */
-	public HashMap<Integer, TrafficLink> getMapLidTlink() {
-		return mapLidTlink;
+	public String getProtocalByPort(int port) {
+		return mapPortProtocal.get(port);
 	}
 
 	/**
+	 * @return Returns the mapPortProtocal.
+	 */
+	public HashMap<Integer, String> getMapPortProtocal() {
+		return mapPortProtocal;
+	}
+
+	/**
+	 * @param mapPortProtocal
+	 *            The mapPortProtocal to set.
+	 */
+	public void setMapPortProtocal(HashMap<Integer, String> mapPortProtocal) {
+		this.mapPortProtocal = mapPortProtocal;
+
+		Entry<Integer, String> entry;
+		Iterator<Entry<Integer, String>> iterator = mapPortProtocal.entrySet()
+				.iterator();
+
+		while (iterator.hasNext()) {
+			entry = iterator.next();
+			this.mapProtocalBytes.put(entry.getValue(), 0l);
+		}
+		this.mapProtocalBytes.put("other", 0l);// 其他协议类型
+	}
+
+	/**
+	 * 用当前周期的拓扑的所有link id 初始化当前周期要分析的所有link id——traffic link 映射
+	 * 
 	 * @param mapLidTlink
 	 *            The mapLidTlink to set.
 	 */
-	public void setMapLidTlink(HashMap<Integer, TrafficLink> mapLidTlink) {
-		this.mapLidTlink = mapLidTlink;
+	public void setMapLidTlink(ArrayList<Integer> linkids) {
+		if (linkids == null) {
+			return;
+		}
+
+		int size = linkids.size();
+
+		for (int i = 0; i < size; i++) {
+			this.mapLidTlink.put(linkids.get(i), null);
+		}
+	}
+
+	public HashMap<Integer, TrafficLink> getMapLidTlink() {
+		return this.mapLidTlink;
 	}
 }

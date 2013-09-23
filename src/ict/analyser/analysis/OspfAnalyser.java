@@ -45,7 +45,7 @@ public class OspfAnalyser implements Runnable {
 	private DBWriter dbWriter = null;
 	private Condition completeCon = null;// 锁相关：设置等待唤醒，相当于wait/notify
 	private List<Netflow> netflows = null;// flow接收模块分析并聚合后得到的报文对象列表
-	private RouteAnalyser processer = null;
+	private RouteAnalyser analyser = null;
 	private ArrayList<Flow> allFlowRoute = null;// 全部flow的路径
 	private HashMap<Integer, TrafficLink> mapLidTlink = null;// link id ——
 	private Logger logger = Logger.getLogger(OspfAnalyser.class.getName());// 注册一个logger
@@ -55,11 +55,11 @@ public class OspfAnalyser implements Runnable {
 	 * 
 	 * @param mainProcesser
 	 */
-	public OspfAnalyser(RouteAnalyser processer, boolean isPrecal) {
+	public OspfAnalyser(RouteAnalyser analyser, boolean isPrecal) {
 		this.isPreCal = isPrecal;
-		this.processer = processer;
-		this.period = processer.getPeriod();
-		this.topo = processer.getOspfTopo();
+		this.analyser = analyser;
+		this.period = analyser.getPeriod();
+		this.topo = analyser.getOspfTopo();
 
 		if (!isPrecal) { // 如果是计算流量路径需要额外初始化的变量
 			this.dbWriter = new DBWriter();
@@ -92,7 +92,7 @@ public class OspfAnalyser implements Runnable {
 		long srcId = 0;
 
 		while (true) {
-			srcId = this.processer.getOneRouterId();
+			srcId = this.analyser.getOneRouterId();
 
 			if (srcId == -1) {
 				break;
@@ -206,7 +206,7 @@ public class OspfAnalyser implements Runnable {
 			linksOnPath = candidate.getPath().getLinks();// 得到路径上的链路
 			candidatesMap.remove(candidate.getRouterId());// 从候选数组中删除这个candidate
 			spfTree.put(candidate.getRouterId(), candidate);// 添加到最优路径路由器id列表中
-			this.processer.insertFoundPath(
+			this.analyser.insertFoundPath(
 					srcId + "_" + candidate.getRouterId(), candidate.getPath());// 添加到RouteAnalyser中保存全部的路径中
 
 			neighbors = candidate.getNeighbor();// 得到candidate的全部neighbor
@@ -361,7 +361,7 @@ public class OspfAnalyser implements Runnable {
 			return;
 		}
 
-		path = this.processer.getPathByIds(srcRouterId + "_" + dstRouterId);
+		path = this.analyser.getPathByIds(srcRouterId + "_" + dstRouterId);
 
 		if (path == null) { // 打印信息
 			logger.warning("path for src router id:"
@@ -387,13 +387,21 @@ public class OspfAnalyser implements Runnable {
 			return;
 		}
 
+		String protocal = this.analyser.getProtocalByPort(port);// 根据端口号获得协议名字
+
+		// 如果这个端口号没找到相应协议名，记为“other”类型
+		if (protocal == null) {
+			protocal = "other";
+		}
+
 		TrafficLink link = this.mapLidTlink.get(linkId);
 
 		if (link != null) {
-			link.addTraffic(bytes, port);
+			link.addTraffic(protocal, bytes);
 		} else {
 			link = new TrafficLink(linkId);
-			link.addTraffic(bytes, port);
+			link.setMapProtocalBytes(this.analyser.getMapProtocalBytes());// 用协议名——byte映射初始化trafficlink中的映射
+			link.addTraffic(protocal, bytes);
 			this.mapLidTlink.put(linkId, link);
 		}
 	}

@@ -78,30 +78,26 @@ public class FileProcesser {
 				configData.setGlobalAnalysisPort(globalAnalysisPort);
 			}
 
-			HashMap<String, Integer[]> mapProtocalPort = new HashMap<String, Integer[]>();
 			JSONArray observePorts = jObject.getJSONArray("observePorts");
 			int size = observePorts.length();
+			HashMap<Integer, String> mapPortProtocal = new HashMap<Integer, String>();
 			JSONObject obj;
 			JSONArray portArr;
-			Integer[] ports;
 			int portSize = 0;
+			int port;
 
 			for (int i = 0; i < size; i++) {
 				obj = observePorts.getJSONObject(i);
 				protocal = obj.getString("protocal");
 				portArr = obj.getJSONArray("ports");
 				portSize = portArr.length();
-				ports = new Integer[portSize];
 
-				for (int j = 0; j > portSize; j++) {
-					ports[i] = portArr.getInt(i);
-				}
-
-				if (portSize != 0) {
-					mapProtocalPort.put(protocal, ports);
+				for (int j = 0; j < portSize; j++) {
+					port = portArr.getInt(i);
+					mapPortProtocal.put(port, protocal);
 				}
 			}
-			configData.setMapProtocalPortsArr(mapProtocalPort);
+			configData.setMapPortProtocal(mapPortProtocal);
 
 		} catch (JSONException e) {
 			e.printStackTrace();
@@ -698,7 +694,10 @@ public class FileProcesser {
 				id = linkEntry.getKey();
 				toAdd = linkEntry.getValue();
 
-				if (id == 0 || toAdd == null) {
+				if (toAdd == null) {// 如果链路上没有任何流量流过，就不加protocal和bytes数组
+					linkObj.put("id", id);
+					linkObj.put("total", 0);
+					links.put(linkObj);
 					continue;
 				}
 

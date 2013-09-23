@@ -4,7 +4,7 @@
  * Description: 每隔15分钟从内存中读取一批netflow报文并解析
  * Author: 25hours
  */
-package ict.analyser.receiver;
+package ict.analyser.communication;
 
 import ict.analyser.netflow.Netflow;
 import ict.analyser.tools.Utils;

@@ -21,13 +21,9 @@ import java.util.HashMap;
  * @version 1.0, 2013-3-5
  */
 public class IpStatistics implements Runnable {
-
 	private static int as = -1;// 当前拓扑的as号
-
 	private ArrayList<Long> neighborAsIp = null;
-
 	private ArrayList<Netflow> allFlows = null;// 当前年周期全部流量的引用
-
 	private HashMap<Long, StatisticItem> allItems = null;// 保存分析结果的映射
 
 	public IpStatistics() {

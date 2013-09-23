@@ -4,7 +4,7 @@
  * Description: 是一个server，接收配置文件
  * Author: 25hours
  */
-package ict.analyser.receiver;
+package ict.analyser.communication;
 
 import ict.analyser.config.ConfigData;
 import ict.analyser.tools.FileProcesser;
