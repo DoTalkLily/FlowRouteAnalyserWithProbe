@@ -2,68 +2,34 @@ package ict.analyser.communication;
 
 /**
  * 修改记录: 20130515  bytes字段从数据库读用getLong
- *          20130531  支持跨周期流查询
+ *         20130531  支持跨周期流查询
  */
+import ict.analyser.database.DBOperator;
 import ict.analyser.tools.IPTranslator;
 
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.UnknownHostException;
-import java.sql.Connection;
-import java.sql.DriverManager;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-//import java.io.DataInputStream;
-//import java.io.DataOutputStream;
-//import java.io.BufferedReader;
-//import java.net.ServerSocket;
-//import java.net.Socket;
 
 public class QueryReceiver extends Thread {
-	private static int lport = 3333;// 服务器监听的端口号
-	private static int sport = 3334;// 向client发送的端口号
-	// private ServerSocket server = null;
-	// private Socket client = null;// 保存接收到连接的socket
-	private DatagramSocket sendSocket = null;
-	private DatagramSocket recvSocket = null;
-
-	// private DataInputStream in = null;// 输入流
-	// private DataOutputStream out = null;// 输出流
-	private DatagramPacket in = null;
-	private DatagramPacket out = null;
-	private final byte[] inBuf = new byte[256];
-
-	private int topN = 0;
-	private long src = 0;
-	private long dst = 0;
-	private long spid = 0;
-	private long epid = 0;
-	private String str = null;
-	private String type = null;// 流查询的类型，有ip, prefix, interface
-
-	private String sql = null;
-	private String dbconn = "jdbc:mysql://127.0.0.1:3306/netflow";
-	private String username = "root";
-	private String password = "qazwsx";
-	private Connection connection = null;
-	private Statement stmt = null;
-	private ResultSet rs = null;
+	private static int port = 3333;// 服务器监听的端口号
+	private Socket client = null;// 保存接收到连接的socket
+	private PrintWriter out = null;// 输出流
+	private BufferedReader in = null;// 输入流
+	private ServerSocket server = null;
 
 	public QueryReceiver() {
 		try {
-			// server = new ServerSocket(port);
-			recvSocket = new DatagramSocket(lport);
-			sendSocket = new DatagramSocket();
-			in = new DatagramPacket(inBuf, inBuf.length);
-			// byte[] outBuf = new byte[10000];
-			// out = new DatagramPacket(outBuf, outBuf.length);
-
+			server = new ServerSocket(port);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -72,133 +38,37 @@ public class QueryReceiver extends Thread {
 	@Override
 	public void run() {
 		while (true) {
-
 			this.initTask();// 初始化socket、输入输出流和各个字段
-
-			this.connectDB();// 连接数据库
-
 			this.query();// 根据client的参数进行查询处理
-
 			this.closeTask();// 关闭数据库、socket和输入输出流
-
 		}
 
 	}
 
 	private void initTask() {
 		try {
-			// this.client = server.accept();
-			// 获得IO句柄
-			recvSocket.receive(in);
-			str = new String(inBuf, 0, in.getLength());
-			// this.in = new DataInputStream(this.client.getInputStream());
-			// this.out = new DataOutputStream(this.client.getOutputStream());
-			// 解析输入流，提取并初始化各个字段
-			// str = in.readUTF();
-			System.out.println(str);
-
-			JSONObject jObject = new JSONObject(str);
-			spid = jObject.getLong("stpid");
-			epid = jObject.getLong("edpid");
-			src = IPTranslator.calIPtoLong(jObject.getString("query"));
-			dst = src;
-			type = jObject.getString("type");
-			topN = jObject.getInt("topN");
-			System.out.println(src);
-
-		} catch (JSONException e) {
-			e.printStackTrace();
-		} catch (UnknownHostException e) {
-			e.printStackTrace();
+			this.client = server.accept();
+			this.in = new BufferedReader(new InputStreamReader(
+					this.client.getInputStream()));
+			this.out = new PrintWriter(this.client.getOutputStream(), true);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-	}
-
-	private void connectDB() {
-
-		try {
-			Class.forName("com.mysql.jdbc.Driver");
-			this.connection = DriverManager.getConnection(dbconn, username,
-					password);
-		} catch (ClassNotFoundException cnfex) {
-			System.err.println("装载JDBC驱动程序失败");
-			cnfex.printStackTrace();
-		} catch (SQLException sqlex) {
-			System.err.println("无法连接数据库");
-			sqlex.printStackTrace();
-		}
-
 	}
 
 	// 多级别流查询
 	private void query() {
 		try {
-			stmt = connection.createStatement();
+			String queryStr = this.in.readLine();
+			JSONObject queryObj = new JSONObject(queryStr);
+			String queryType = queryObj.getString("type");
 
-			JSONObject jobj = new JSONObject();
-			JSONObject resultJobj = new JSONObject();
-			JSONArray srcArray = new JSONArray();
-			JSONArray dstArray = new JSONArray();
-
-			sql = "select pid, sum(bytes),srcIP, dstIP, path, protocol "
-					+ "from (select * from netflow where " + "pid >= '" + spid
-					+ "' " + "and pid<='" + epid + "' and src" + type + "='"
-					+ src + "') "
-					+ "temp group by srcIP, dstIP, srcPort, dstPort, "
-					+ "startTime, endTime, protocol, output"
-					+ " order by sum(bytes) desc limit " + topN + ";";
-			System.out.println("src:" + sql);
-			rs = stmt.executeQuery(sql);
-
-			while (rs.next()) {
-
-				jobj = new JSONObject();
-				jobj.put("pid", rs.getLong("pid"));
-				jobj.put("srcIP", IPTranslator.calLongToIp(rs.getLong("srcIP")));
-				jobj.put("dstIP", IPTranslator.calLongToIp(rs.getLong("dstIP")));
-				jobj.put("bytes", rs.getLong("sum(bytes)"));
-				jobj.put("protocol", rs.getInt("protocol"));
-				jobj.put("path", rs.getString("path"));
-
-				srcArray.put(jobj);
+			if (queryType.equals("flow")) {
+				queryFlow(queryObj);
+			} else if (queryType.equals("link")) {
+				queryLink(queryObj);
 			}
-			resultJobj.put("src", srcArray);
 
-			sql = "select pid, sum(bytes),srcIP, dstIP, path, protocol "
-					+ "from (select * from netflow where " + "pid >= '" + spid
-					+ "' " + "and pid<='" + epid + "' and dst" + type + "='"
-					+ dst + "') "
-					+ "temp group by srcIP, dstIP, srcPort, dstPort, "
-					+ "startTime, endTime, protocol, input"
-					+ " order by sum(bytes) desc limit " + topN + ";";
-			System.out.println("dst:" + sql);
-			rs = stmt.executeQuery(sql);
-
-			while (rs.next()) {
-				jobj = new JSONObject();
-				jobj.put("pid", rs.getLong("pid"));
-				jobj.put("srcIP", IPTranslator.calLongToIp(rs.getLong("srcIP")));
-				jobj.put("dstIP", IPTranslator.calLongToIp(rs.getLong("dstIP")));
-				jobj.put("bytes", rs.getLong("sum(bytes)"));
-				jobj.put("protocol", rs.getInt("protocol"));
-				jobj.put("path", rs.getString("path"));
-
-				dstArray.put(jobj);
-			}
-			resultJobj.put("dst", dstArray);
-
-			String strToSend = resultJobj.toString();
-			out = new DatagramPacket(strToSend.getBytes(), strToSend.length(),
-					in.getAddress(), sport); // 使用in中的ip
-			System.out.println(in.getAddress());
-			System.out.println(strToSend);
-			System.out.println(strToSend.length());
-			sendSocket.send(out);
-
-			// out.writeUTF(resultJobj.toString());
-		} catch (SQLException e) {
-			e.printStackTrace();
 		} catch (JSONException e) {
 			e.printStackTrace();
 		} catch (IOException e) {
@@ -206,25 +76,221 @@ public class QueryReceiver extends Thread {
 		}
 	}
 
+	private void queryFlow(JSONObject queryObject) {
+		int topN;
+		int[] portArr;
+		long startPid, endPid;
+		JSONArray ports;
+		JSONObject params;
+		String level, src, dst;
+
+		try {
+			params = queryObject.getJSONObject("params");
+			level = params.getString("level");
+			ports = params.getJSONArray("ports");
+			startPid = params.getLong("stpid");
+			endPid = params.getLong("edpid");
+			src = params.getString("src");
+			dst = params.getString("dst");
+			topN = params.getInt("topN");
+
+			if (level == null || ports == null || ports.length() == 0
+					|| startPid == 0 || endPid == 0 || topN <= 0) {// 如果参数有问题 报错
+				out.println("wrong params");
+				this.closeTask();
+				return;
+			}
+
+			// 提取port
+			int portLen = ports.length();
+			portArr = new int[portLen];
+
+			for (int i = 0; i < portLen; i++) {
+				portArr[i] = (Integer) ports.get(i);
+			}
+		} catch (JSONException e1) {
+			e1.printStackTrace();
+			return;
+		}
+
+		String sql;
+		String selectStr = "select sum(bytes),srcIP, dstIP,srcPort,dstPort, path, protocol,input,tos from netflow where ";
+		String portArrStr = String.valueOf(portArr);
+		String conditionStr = " pid >= " + startPid + " and pid <=" + endPid
+				+ " and srcPort in " + portArrStr + " or dstPort in "
+				+ portArrStr + " group by bytes desc limit " + topN + ";";
+
+		String srcCondition = "", dstCondition = "";
+
+		if (src == null && dst == null) {
+			sql = selectStr + conditionStr;
+		}
+
+		if (src != null) {
+			srcCondition = (level.equals("ip") ? " srcIP=" : " srcPrefix=")
+					+ src;
+		}
+
+		if (dst != null) {
+			dstCondition = (level.equals("ip") ? " dstIP=" : " dstPrefix=")
+					+ src;
+		}
+
+		sql = selectStr + srcCondition + " and " + dstCondition + conditionStr;// 这里需求待确认
+		ResultSet result = DBOperator.queryFlow(sql);
+
+		if (result == null) {
+			out.println("query error");
+			this.closeTask();
+			return;
+		}
+
+		String resultStr = getResultJson(result);
+		out.println(resultStr.toString());
+		closeTask();
+	}
+
+	private String getResultJson(ResultSet result) {
+		JSONArray resultObj = new JSONArray();
+		JSONObject item;
+
+		try {
+			while (result.next()) {
+				item = new JSONObject();
+				item.put("srcIp",
+						IPTranslator.calLongToIp(result.getLong("srcIP")));
+				item.put("dstIp",
+						IPTranslator.calLongToIp(result.getLong("dstIP")));
+				item.put("srcPort", result.getInt("srcPort"));
+				item.put("dstPort", result.getInt("dstPort"));
+				item.put("protocal", result.getInt("protocal"));
+				item.put("index", result.getInt("input"));
+				item.put("tos", result.getInt("tos"));
+				item.put("bytes", result.getLong("bytes"));
+				item.put("path", result.getString("path"));
+				resultObj.put(item);
+			}
+			return resultObj.toString();
+		} catch (JSONException e) {
+			e.printStackTrace();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} finally {
+			this.closeTask();
+		}
+		return null;
+	}
+
+	private void queryLink(JSONObject queryObject) {
+		int topN;
+		long pid;
+		JSONObject params;
+		String sql;
+		String group;
+		String routerA, routerB;
+
+		try {
+			group = queryObject.getString("group");
+			params = queryObject.getJSONObject("params");
+			pid = params.getLong("pid");
+			routerA = params.getString("routerA");
+			routerB = params.getString("routerB");
+			topN = params.getInt("topN");
+
+			String selectStr = "select sum(bytes),srcIP, dstIP,path from netflow where pid="
+					+ pid;
+			String otherCondition = " order by sum(bytes) desc limit " + topN
+					+ ";";
+			String groupCondition = "";
+
+			if (group.equals("ip2")) {// 按照ip二元组聚合
+				groupCondition = " group by srcIP, dstIP ";
+				long srcRouter = IPTranslator.calIPtoLong(routerA);
+				long dstRouter = IPTranslator.calIPtoLong(routerB);
+
+				sql = selectStr + " and srcRouter=" + srcRouter + " dstRouter="
+						+ dstRouter + groupCondition + otherCondition;
+				ResultSet set1 = DBOperator.queryFlow(sql);
+
+				sql = selectStr + " and srcRouter" + dstRouter + " dstRouter="
+						+ srcRouter + group + otherCondition;
+				ResultSet set2 = DBOperator.queryFlow(sql);
+
+				JSONObject resultObj = new JSONObject();
+				resultObj.put("routerA", routerA);
+				resultObj.put("routerB", routerB);
+				JSONArray obverse = new JSONArray();
+				JSONObject item;
+
+				while (set1.next()) {
+					item = new JSONObject();
+					item.put("srcIp",
+							IPTranslator.calLongToIp(set1.getLong("srcIP")));
+					item.put("dstIp",
+							IPTranslator.calLongToIp(set1.getLong("dstIP")));
+					item.put("bytes", set1.getLong("bytes"));
+					item.put("path", set1.getString("path"));
+					obverse.put(item);
+				}
+
+				JSONArray reverse = new JSONArray();
+
+				while (set2.next()) {
+					item = new JSONObject();
+					item.put("srcIp",
+							IPTranslator.calLongToIp(set1.getLong("srcIP")));
+					item.put("dstIp",
+							IPTranslator.calLongToIp(set1.getLong("dstIP")));
+					item.put("bytes", set1.getLong("bytes"));
+					item.put("path", set1.getString("path"));
+					reverse.put(item);
+				}
+
+				resultObj.put("obverse", obverse);
+				resultObj.put("reverse", reverse);
+
+				out.println(resultObj.toString());
+			} else {
+				if (group.equals("ip7")) {// 按照ip7元组聚合
+					groupCondition = " group by srcIP, dstIP, srcPort, dstPort, protocol,input,tos ";
+				} else if (group.equals("protocal")) {// 按照业务聚合
+					groupCondition = " group by protocal ";
+				}
+				sql = selectStr + groupCondition + otherCondition;
+				ResultSet result = DBOperator.queryFlow(sql);
+
+				if (result == null) {
+					out.println("query error");
+					this.closeTask();
+					return;
+				}
+
+				String resultStr = getResultJson(result);
+				out.println(resultStr.toString());
+			}
+
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} catch (JSONException e) {
+			e.printStackTrace();
+		} finally {
+			this.closeTask();
+		}
+	}
+
 	private void closeTask() {
 		try {
-			this.connection.close();
-		} catch (Exception e) {
-			System.err.println("关闭数据库连接失败");
-		}
-		try {
-//			 if (sendSocket != null) {
-//			 sendSocket.close();
-//			 }
-//			 if (out != null) {
-//			 out.close();
-//			 }
-//			 if (client != null) {
-//			 client.close();
-//			 }
-		} catch (Exception e) {
+			if (out != null) {
+				out.close();
+			}
+			if (in != null) {
+				in.close();
+			}
+			if (client != null) {
+				client.close();
+			}
+		} catch (IOException e) {
 			e.printStackTrace();
-			return;
 		}
 	}
 }

@@ -8,7 +8,7 @@ package ict.analyser.analysis;
 
 import ict.analyser.common.Constant;
 import ict.analyser.common.Vertex;
-import ict.analyser.database.DBWriter;
+import ict.analyser.database.DBOperator;
 import ict.analyser.flow.Flow;
 import ict.analyser.flow.Path;
 import ict.analyser.flow.TrafficLink;
@@ -42,7 +42,7 @@ public class OspfAnalyser implements Runnable {
 	private OspfTopo topo = null;// 保存当前AS拓扑结构等数据
 	private Lock flowLock = null;
 	private Lock completeLock = null;
-	private DBWriter dbWriter = null;
+	private DBOperator dbWriter = null;
 	private Condition completeCon = null;// 锁相关：设置等待唤醒，相当于wait/notify
 	private List<Netflow> netflows = null;// flow接收模块分析并聚合后得到的报文对象列表
 	private RouteAnalyser analyser = null;
@@ -62,7 +62,7 @@ public class OspfAnalyser implements Runnable {
 		this.topo = analyser.getOspfTopo();
 
 		if (!isPrecal) { // 如果是计算流量路径需要额外初始化的变量
-			this.dbWriter = new DBWriter();
+			this.dbWriter = new DBOperator();
 			this.flowLock = new ReentrantLock();
 			this.completeLock = new ReentrantLock();
 			this.allFlowRoute = new ArrayList<Flow>();
@@ -165,7 +165,7 @@ public class OspfAnalyser implements Runnable {
 	 */
 	private void writeToDB() {
 		this.flowLock.lock();
-		this.dbWriter.writeToDB(this.allFlowRoute);
+		this.dbWriter.writeFlowToDB(this.allFlowRoute);
 		this.flowLock.unlock();
 		logger.info("write to db done!");
 	}
@@ -350,6 +350,9 @@ public class OspfAnalyser implements Runnable {
 					+ "  cannot be found!\n");
 			return;
 		}
+
+		netflow.setSrcRouter(srcRouterId);
+		netflow.setDstRouter(dstRouterId);
 
 		Path path;
 

@@ -10,20 +10,18 @@ import ict.analyser.netflow.Netflow;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 
-public class DBWriter {
-
-	private String sql = "insert into netflow values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
-
-	// private int counter = 0;
-	public boolean writeToDB(ArrayList<Flow> flows) {
+public class DBOperator {
+	public boolean writeFlowToDB(ArrayList<Flow> flows) {
+		String sql = "insert into netflow values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
 
 		Connection conn = DBUtils.getConnection();// 从线程池中获得一个连接
 
 		try {
-
 			if (!conn.isClosed()) {
 				int size = flows.size();
 				Flow oneFlow = null;
@@ -31,7 +29,7 @@ public class DBWriter {
 
 				System.out.println("数据库连接成功");
 				// 数据库连接成功，开始存入NetFlow数据
-				PreparedStatement pstmt = conn.prepareStatement(this.sql);
+				PreparedStatement pstmt = conn.prepareStatement(sql);
 
 				int counter = 0;
 
@@ -43,21 +41,24 @@ public class DBWriter {
 						pstmt.setLong(1, oneFlow.getPid());
 						pstmt.setLong(2, netflow.getSrcAddr());
 						pstmt.setLong(3, netflow.getDstAddr());
-						pstmt.setInt(4, netflow.getSrcPort());
-						pstmt.setInt(5, netflow.getDstPort());
-						pstmt.setByte(6, netflow.getProtocol());
-						pstmt.setLong(7, netflow.getdOctets());
-						pstmt.setInt(8, netflow.getSrcAs());
-						pstmt.setInt(9, netflow.getDstAs());
-						pstmt.setLong(10, netflow.getSrcPrefix());
-						pstmt.setLong(11, netflow.getDstPrefix());
-						pstmt.setInt(12, netflow.getInput());
-						pstmt.setInt(13, netflow.getOutput());
-						pstmt.setString(14, oneFlow.getPath()
+						pstmt.setLong(4, netflow.getSrcRouter());
+						pstmt.setLong(5, netflow.getDstRouter());
+						pstmt.setInt(6, netflow.getSrcPort());
+						pstmt.setInt(7, netflow.getDstPort());
+						pstmt.setByte(8, netflow.getProtocol());
+						pstmt.setLong(9, netflow.getdOctets());
+						pstmt.setInt(10, netflow.getSrcAs());
+						pstmt.setInt(11, netflow.getDstAs());
+						pstmt.setLong(12, netflow.getSrcPrefix());
+						pstmt.setLong(13, netflow.getDstPrefix());
+						pstmt.setInt(14, netflow.getInput());
+						pstmt.setInt(15, netflow.getOutput());
+						pstmt.setInt(16, netflow.getTos());
+						pstmt.setString(17, oneFlow.getPath()
 								.getPathInIpFormat());
-						pstmt.setLong(15, netflow.getFirst());
-						pstmt.setLong(16, netflow.getLast());
-						pstmt.setShort(17, netflow.getProc());
+						pstmt.setLong(18, netflow.getFirst());
+						pstmt.setLong(19, netflow.getLast());
+						pstmt.setShort(20, netflow.getProc());
 
 						conn.setAutoCommit(false);// 重要！不然自动提交
 						pstmt.addBatch();// 用PreparedStatement的批量处理
@@ -84,5 +85,26 @@ public class DBWriter {
 		}
 
 		return false;
+	}
+
+	public static ResultSet queryFlow(String sql) {
+		if (sql == null) {
+			return null;
+		}
+
+		Connection conn = DBUtils.getConnection();// 从线程池中获得一个连接
+
+		try {
+			if (!conn.isClosed()) {
+				Statement statement = conn.createStatement();
+				ResultSet set = statement.executeQuery(sql);
+				return set;
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} finally {
+			DBUtils.close(conn);
+		}
+		return null;
 	}
 }

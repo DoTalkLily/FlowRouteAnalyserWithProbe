@@ -8,7 +8,7 @@ package ict.analyser.analysis;
 
 import ict.analyser.common.Constant;
 import ict.analyser.common.Vertex;
-import ict.analyser.database.DBWriter;
+import ict.analyser.database.DBOperator;
 import ict.analyser.flow.Flow;
 import ict.analyser.flow.Path;
 import ict.analyser.flow.TrafficLink;
@@ -39,7 +39,7 @@ public class IsisAnalyser implements Runnable {
 	private long period = 0;
 	private IsisTopo topo = null;
 	private Lock flowLock = null;
-	private DBWriter dbWriter = null;
+	private DBOperator dbWriter = null;
 	private Lock completeLock = null;
 	private boolean isPreCal = false;
 	private boolean completed = false;
@@ -62,7 +62,7 @@ public class IsisAnalyser implements Runnable {
 		this.topo = processer.getIsisTopo();
 
 		if (!isPrecal) { // 如果是计算流量路径需要额外初始化的变量
-			this.dbWriter = new DBWriter();
+			this.dbWriter = new DBOperator();
 			this.flowLock = new ReentrantLock();
 			this.completeLock = new ReentrantLock();
 			this.allFlowRoute = new ArrayList<Flow>();
@@ -522,7 +522,7 @@ public class IsisAnalyser implements Runnable {
 
 	private void writeToDB() {
 		this.flowLock.lock();
-		this.dbWriter.writeToDB(this.allFlowRoute);
+		this.dbWriter.writeFlowToDB(this.allFlowRoute);
 		this.flowLock.unlock();
 		System.out.println("wrote to db done!!");
 	}

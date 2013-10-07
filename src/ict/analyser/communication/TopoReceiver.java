@@ -37,7 +37,6 @@ import java.util.logging.Logger;
  * @version 1.1, 2013-2-18 添加容错机制，如果一个连接错误或者数据传输错误，关闭连接，不解析拓扑
  */
 public class TopoReceiver extends Thread {
-
 	private static int port = 2012;// 端口号(待定)
 	private static int bufferSize = 50 * 1024;// 缓冲区大小
 	private boolean signal = false;// 第一个周期开始接收文件时发送给主线程的signal
@@ -165,9 +164,9 @@ public class TopoReceiver extends Thread {
 		String protocal = processer.getProtocol();
 
 		if (protocal == null) {// 根据是否有协议类型来判断是否已经收到过配置文件了，如果没收到配置文件，发送awake给web发布
-			writer.print("awake\n");
+			writer.print("awake");
 		} else {
-			writer.println("ack\n");// 向服务器发送ack
+			writer.println("ack");// 向服务器发送ack
 		}
 	}
 

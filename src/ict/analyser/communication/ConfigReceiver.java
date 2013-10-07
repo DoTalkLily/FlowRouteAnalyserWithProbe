@@ -114,7 +114,7 @@ public class ConfigReceiver extends Thread {
 			this.fileOut.write(buf, 0, read);
 		}
 		System.out.println("配置文件接收了" + passedlen + "B");
-		writer.println("ack\n");// 向服务器发送ack
+		writer.println("ack");// 向服务器发送ack
 	}
 
 	/**

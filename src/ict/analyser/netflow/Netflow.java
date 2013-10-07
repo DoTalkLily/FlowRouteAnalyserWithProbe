@@ -58,6 +58,8 @@ import ict.analyser.tools.Utils;
 public class Netflow {
 
 	long routerIP = 0;
+	long srcRouter = 0;// 源路由器id
+	long dstRouter = 0;// 目的路由器id
 	int version = 0;
 	long unix_secs = 0;
 	long srcAddr = 0;
@@ -73,16 +75,16 @@ public class Netflow {
 	long last = 0;
 	int srcPort = -1;
 	int dstPort = -1;
-	
+
 	short tcpFlags = 0;
 	short proc = -1;
 	short tos = 0;
-	
+
 	int srcAs = -1;
 	int dstAs = -1;
 	byte srcMask = 0;
 	byte dstMask = 0;
-	byte protocol = 0;// === 0C 
+	byte protocol = 0;// === 0C
 
 	public Netflow(byte[] buf) {
 		this.routerIP = Utils.byte2long(buf, 0, 4);
@@ -104,23 +106,21 @@ public class Netflow {
 		this.tos = Utils.byte2short(buf, 52);
 		this.srcMask = buf[54];
 		this.dstMask = buf[55];
-		this.srcAs =(int) Utils.byte2long(buf, 56, 4);
+		this.srcAs = (int) Utils.byte2long(buf, 56, 4);
 		this.dstAs = (int) Utils.byte2long(buf, 60, 4);
-		
-        		
+
 		this.dOctets *= 1000;
-//		srctemp = new byte[4];
-//		srctemp[0] = buf[56];
-//		srctemp[1] = buf[57];
-//		srctemp[2] = buf[58];
-//		srctemp[3] = buf[59];
-//		temp = new byte[4];
-//		temp[0] = buf[60];
-//		temp[1] = buf[61];
-//		temp[2] = buf[62];
-//		temp[3] = buf[63];
-		
-		
+		// srctemp = new byte[4];
+		// srctemp[0] = buf[56];
+		// srctemp[1] = buf[57];
+		// srctemp[2] = buf[58];
+		// srctemp[3] = buf[59];
+		// temp = new byte[4];
+		// temp[0] = buf[60];
+		// temp[1] = buf[61];
+		// temp[2] = buf[62];
+		// temp[3] = buf[63];
+
 		this.srcPrefix = IPTranslator.calLongPrefix(this.srcAddr, this.srcMask);
 		this.dstPrefix = IPTranslator.calLongPrefix(this.dstAddr, this.dstMask);
 
@@ -135,9 +135,9 @@ public class Netflow {
 
 	}
 
-	//add
-//	private byte[] temp ;
-//	private byte[] srctemp;
+	// add
+	// private byte[] temp ;
+	// private byte[] srctemp;
 	/**
 	 * @return Returns the routerIP.
 	 */
@@ -307,19 +307,54 @@ public class Netflow {
 	}
 
 	/**
+	 * @return Returns the srcRouter.
+	 */
+	public long getSrcRouter() {
+		return srcRouter;
+	}
+
+	/**
+	 * @param srcRouter
+	 *            The srcRouter to set.
+	 */
+	public void setSrcRouter(long srcRouter) {
+		this.srcRouter = srcRouter;
+	}
+
+	/**
+	 * @return Returns the dstRouter.
+	 */
+	public long getDstRouter() {
+		return dstRouter;
+	}
+
+	/**
+	 * @param dstRouter
+	 *            The dstRouter to set.
+	 */
+	public void setDstRouter(long dstRouter) {
+		this.dstRouter = dstRouter;
+	}
+
+	/**
 	 * 
 	 *
 	 */
 	public void printDetail() {
 
 		System.out.println(" flow detail  " + "router ip:"
-				+ IPTranslator.calLongToIp(routerIP) + " version:" + version
+				+ IPTranslator.calLongToIp(routerIP) + " src router id:"
+				+ IPTranslator.calLongToIp(srcRouter) + "  dst router id:"
+				+ IPTranslator.calLongToIp(dstRouter) + " version:" + version
 				+ "  unix_sec:" + unix_secs + "  src ip"
 				+ IPTranslator.calLongToIp(srcAddr) + "  dst ip"
 				+ IPTranslator.calLongToIp(dstAddr) + "  nexthop ip"
 				+ IPTranslator.calLongToIp(nexthop) + "  packets:" + dPkts
 				+ " bytes:" + dOctets + "  first:" + first + "  last:" + last
 				+ "  srcport:" + srcPort + "  dstport:" + dstPort + " proc:"
-				+ proc +"  tos:"+this.tos+ "  srcAS:" + srcAs + "  dstAS:" + dstAs + "   input:"+this.input+"   output:"+this.output+"    tcpflags:"+this.tcpFlags+"  srcmask:"+this.srcMask+"    dstmask:"+this.dstMask )  ;
+				+ proc + "  tos:" + this.tos + "  srcAS:" + srcAs + "  dstAS:"
+				+ dstAs + "   input:" + this.input + "   output:" + this.output
+				+ "    tcpflags:" + this.tcpFlags + "  srcmask:" + this.srcMask
+				+ "    dstmask:" + this.dstMask);
 	}
 }
