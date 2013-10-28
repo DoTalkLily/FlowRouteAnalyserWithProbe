@@ -9,8 +9,6 @@ package ict.analyser.communication;
 import ict.analyser.analysis.MainProcesser;
 import ict.analyser.config.ConfigData;
 import ict.analyser.isistopo.IsisTopo;
-import ict.analyser.ospftopo.AsExternalLSA;
-import ict.analyser.ospftopo.BgpItem;
 import ict.analyser.ospftopo.OspfTopo;
 import ict.analyser.tools.FileProcesser;
 
@@ -23,7 +21,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.HashMap;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -209,8 +206,8 @@ public class TopoReceiver extends Thread {
 				this.isTopoChanged = fileProcesser.isTopoChanged();
 				this.isOuterInfoChanged = fileProcesser.isOuterInfoChanged();
 
-				if (fileProcesser.isTopoChanged()) {// 如果topo改变了
-					if (fileProcesser.isOuterInfoChanged()) {// 如果bgp和LSA5信息变了
+				if (this.isTopoChanged) {// 如果topo改变了
+					if (this.isOuterInfoChanged) {// 如果bgp和LSA5信息变了
 						if (newTopo == null) {// 但是没解析到拓扑数据，报错返回，用原来拓扑数据
 							logError("topo is changed but no topo data!");
 							return;
@@ -222,13 +219,11 @@ public class TopoReceiver extends Thread {
 							return;
 						}
 						// 否则bgp用原来数据，但是用的是深拷贝，不然这种引用会导致原来的ospfTopo对象不能释放，导致内存泄露，拓扑部分用新数据
-						HashMap<Long, BgpItem> mapPrefixBgp = this.ospfTopo
-								.getMapPrefixBgpItem();
-						HashMap<Long, AsExternalLSA> mapPrefixLsa5 = this.ospfTopo
-								.getMapPrefixExternalLsa();
 						this.ospfTopo = newTopo;
-						this.ospfTopo.setMapPrefixBgpItem(mapPrefixBgp);
-						this.ospfTopo.setMapPrefixExternalLsa(mapPrefixLsa5);
+						this.ospfTopo.setMapPrefixBgpItem(this.ospfTopo
+								.getMapPrefixBgpItem());
+						this.ospfTopo.setMapPrefixExternalLsa(this.ospfTopo
+								.getMapPrefixExternalLsa());
 					}
 
 				} else {// 如果拓扑没改变，只更改pid和外部信息
@@ -255,17 +250,40 @@ public class TopoReceiver extends Thread {
 						newTopo = null;
 					}
 				}
-			} else {// 处理isis情况，只需考虑拓扑
+			} else {// 处理isis情况
 				IsisTopo newTopo = fileProcesser.readIsisTopo(this.isisPath);
+				this.isTopoChanged = fileProcesser.isTopoChanged();
+				this.isOuterInfoChanged = fileProcesser.isOuterInfoChanged();
 
-				if (fileProcesser.isTopoChanged()) {// 如果topo改变了
-					if (newTopo == null) {
-						logError("topo is changed but no topo data!");
-						return;
+				if (this.isTopoChanged) {// 如果topo改变了
+					if (this.isOuterInfoChanged) {// 如果可达性信息改变
+						if (newTopo == null) {// 但是没解析到拓扑数据，报错返回，用原来拓扑数据
+							logError("topo is changed but no topo data!");
+							return;
+						}
+						this.isisTopo = newTopo;// 否则用新拓扑中数据
+					} else { // 如果可达性信息没变
+						if (newTopo == null) {// 新拓扑为空报错
+							logError("topo is changed but no topo data!");
+							return;
+						}
+						// 否则bgp用原来数据，但是用的是深拷贝，不然这种引用会导致原来的isisTopo对象不能释放，导致内存泄露，拓扑部分用新数据
+						this.isisTopo = newTopo;
+
+						this.isisTopo.setMapPrefixRidForStub(this.isisTopo
+								.getMapPrefixRidForStub());
+
+						if (newTopo.getNetworkType() == 1) {
+							this.isisTopo.setMapPrefixReachForL1(this.isisTopo
+									.getMapPrefixReachForL1());
+						} else {
+							this.isisTopo.setMapPrefixRidForL2(this.isisTopo
+									.getMapPrefixRidForL2());
+						}
+
 					}
 
-					this.isisTopo = newTopo;
-				} else {// 如果拓扑没改变，只更改pid
+				} else {// 如果拓扑没改变，只更改pid和外部信息
 					long pid = fileProcesser.getPid();
 
 					if (pid == 0) {
@@ -274,6 +292,27 @@ public class TopoReceiver extends Thread {
 					}
 
 					this.isisTopo.setPeriodId(pid);
+
+					if (fileProcesser.isOuterInfoChanged()) {// 如果拓扑没变，外部可达性信息改变了
+						if (newTopo == null) {
+							logError("topo is changed but no topo data!");
+							return;
+						}
+
+						// 如果拓扑信息没变，只把bgp和external lsa信息更新，深拷贝，然后释放newTopo对象
+						this.isisTopo.setMapPrefixRidForStub(newTopo
+								.getMapPrefixRidForStub());
+
+						if (newTopo.getNetworkType() == 1) {
+							this.isisTopo.setMapPrefixReachForL1(this.isisTopo
+									.getMapPrefixReachForL1());
+						} else {
+							this.isisTopo.setMapPrefixRidForL2(this.isisTopo
+									.getMapPrefixRidForL2());
+						}
+
+						newTopo = null;
+					}
 				}
 			}
 

@@ -14,6 +14,7 @@ import ict.analyser.flow.Path;
 import ict.analyser.flow.TrafficLink;
 import ict.analyser.isistopo.IsisRouter;
 import ict.analyser.isistopo.IsisTopo;
+import ict.analyser.isistopo.Reachability;
 import ict.analyser.netflow.Netflow;
 import ict.analyser.ospftopo.Link;
 import ict.analyser.tools.IPTranslator;
@@ -21,6 +22,7 @@ import ict.analyser.tools.IPTranslator;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -39,10 +41,10 @@ public class IsisAnalyser implements Runnable {
 	private long period = 0;
 	private IsisTopo topo = null;
 	private Lock flowLock = null;
-	private DBOperator dbWriter = null;
 	private Lock completeLock = null;
 	private boolean isPreCal = false;
 	private boolean completed = false;
+	private DBOperator dbWriter = null;
 	private Condition completeCon = null;// 锁相关：设置等待唤醒，相当于wait/notify
 	private List<Netflow> netflows = null;// netflow接收模块分析并聚合后得到的报文对象列表
 	private RouteAnalyser processer = null;
@@ -55,9 +57,9 @@ public class IsisAnalyser implements Runnable {
 	 * 
 	 * @param mainProcesser
 	 */
-	public IsisAnalyser(RouteAnalyser processer, boolean isPrecal) {
+	public IsisAnalyser(RouteAnalyser analyser, boolean isPrecal) {
 		this.isPreCal = isPrecal;
-		this.processer = processer;
+		this.processer = analyser;
 		this.period = processer.getPeriod();
 		this.topo = processer.getIsisTopo();
 
@@ -77,7 +79,6 @@ public class IsisAnalyser implements Runnable {
 	 */
 	@Override
 	public void run() {
-
 		if (isPreCal) {// 如果是topo提前计算
 			logger.info("prefre calculating");
 			calTopoRoute();
@@ -104,143 +105,92 @@ public class IsisAnalyser implements Runnable {
 	}
 
 	public void calFlowRoute() {
-
-		// if (this.topo.getNetworkType() == 1) {
-		// calL1Flow();
-		// } else {
-		// calL2Flow();
-		// }
-
 		if (this.topo.getNetworkType() == 1) {
 			calL1Flow();
+		} else {
+			calL2Flow();
 		}
-
 	}
 
-	public void calL1Flow() {
-
-		int direction = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
-		long srcRouterId = 0;
-		long dstRouterId = 0;
-		long srcInterface = 0;// 源路由器接口前缀
-		long dstInterface = 0;// 目的路由器接口前缀
-		long[] ridInter = null;
-		int flowCount = this.netflows.size();// 得到聚合后的netflow列表的条目总数
+	private void calL2Flow() {
 		Path path = null;
-		Netflow netflow = null;// 临时变量
+		Netflow netflow;// 临时变量
+		int resultType;
+		long srcRouterId;
+		long dstRouterId;
+		int flowDirection;
+		boolean srcInside, dstInside;
+		int flowCount = this.netflows.size();// 得到聚合后的netflow列表的条目总数
+
+		Object[] dstInfo;
 
 		for (int i = 0; i < flowCount; i++) { // 开始遍历，逐条分析路径
-			// 重置临时变量
-			direction = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
 			srcRouterId = 0;
 			dstRouterId = 0;
-			srcInterface = 0;
-			dstInterface = 0;
+			srcInside = false;
+			dstInside = false;
 			// 开始分析
 			netflow = this.netflows.get(i);// 取得一条流
 
-			ridInter = this.topo.getRidByPrefix(netflow.getSrcAddr(),
-					netflow.getSrcMask());
-			// 注：chuyang中全网都是l2网络，因此只有域内流量，如果根据prefix找不到路由器则跳过
-			if (ridInter == null) {
-				netflow.printDetail();
-				logger.info("cannot find prefix for src :"
-						+ netflow.getSrcAddr() + "  "
-						+ IPTranslator.calLongToIp((long) netflow.getSrcAddr()));
-				System.out
-						.println("***************************************************\n");
+			// 定位源路由器id
+			srcRouterId = this.topo.getBrIdByIp(netflow.getRouterIP());// 首先根据路由器ip判断源是否是l1/l2路由器
 
-				continue;
+			if (srcRouterId == 0) {
+				srcRouterId = this.topo.getSrcRidByPrefix(netflow.getSrcAddr(),
+						netflow.getSrcMask());
+
+				if (srcRouterId == 0) {
+					netflow.printDetail();
+					debug(netflow.getSrcAddr(), 0);
+					continue;
+				}
+				srcInside = true;
 			}
-			srcRouterId = ridInter[0];
-			srcInterface = ridInter[1];
+			// 定位结束
 
-			if (srcRouterId == 0 || srcInterface == 0) {
-				netflow.printDetail();
-				logger.info("interid == 0 or srcInterface == 0");
-				System.out
-						.println("***************************************************\n");
-				continue;
-			}
-
-			ridInter = this.topo.getRidByPrefix(netflow.getDstAddr(),
+			// 定位目的路由器
+			dstInfo = this.topo.getRidByPrefixLevel2(netflow.getDstAddr(),
 					netflow.getDstMask());
 
-			if (ridInter == null) {
+			if (dstInfo == null) {
 				netflow.printDetail();
-				logger.info("cannot find prefix for dst:"
-						+ netflow.getDstAddr() + "   "
-						+ IPTranslator.calLongToIp((long) netflow.getDstAddr()));
-				System.out
-						.println("***************************************************\n");
+				debug(0, netflow.getDstAddr());
 				continue;
 			}
 
-			dstRouterId = ridInter[0];
-			dstInterface = ridInter[1];
+			resultType = (Integer) dstInfo[0];
 
-			if (dstRouterId == 0 || dstInterface == 0) {
+			if (resultType == 1) {// 在stub中
+				dstInside = true;
+			}
+
+			dstRouterId = (Long) dstInfo[1];
+
+			if (dstRouterId == 0) {
 				netflow.printDetail();
-				logger.info("interid == 0 or dstInterface == 0");
-				System.out
-						.println("***************************************************\n");
+				debug(0, netflow.getDstAddr());
 				continue;
 			}
 
-			netflow.printDetail();
-
-			if (srcRouterId == dstRouterId) {
-				logger.info("srcRid  ==  dstRid,create a new path with cost 0");
-				path = new Path();
-				path.setTotalCost(0);
-				// path.setSrcInterface(srcInterface);
-				// path.setDstInterface(dstInterface);
-				path.setSrcRouter(srcRouterId);
-				// continue;
-			} else {
-
-				direction = Constant.INTERNAL_FLOW;
-
-				System.out.println("src id:"
-						+ this.topo.getMapLongStrId().get(srcRouterId)
-						+ "  dsr id:"
-						+ this.topo.getMapLongStrId().get(dstRouterId));
-
-				path = computeInternalPath(srcRouterId, dstRouterId);
-
-			}
+			path = processer.getPathByIds(srcRouterId + "_" + dstRouterId);
 
 			if (path == null) {
-				logger.warning("cannot find path for src id: "
-						+ IPTranslator.calLongToIp(srcRouterId) + "   dst id:"
-						+ IPTranslator.calLongToIp(dstRouterId));
-				System.out
-						.println("*********************************************\n");
+				netflow.printDetail();
+				debug(srcRouterId, dstRouterId);
 				continue;
 			}
 
-			// 将源和目的路由器存入列表，下一个周期提前计算最短路径的源和目的对列表
-			if (srcRouterId != dstRouterId) {
-				// path.setSrcInterface(srcInterface);// 设置源和目的路由器接口prefix
-				// path.setDstInterface(dstInterface);
+			debug(path);
+			// 判断流向
+			if (srcInside) {
+				flowDirection = dstInside ? Constant.INTERNAL_FLOW
+						: Constant.OUTBOUND_FLOW;
+			} else {
+				flowDirection = dstInside ? Constant.INBOUND_FLOW
+						: Constant.TRANSIT_FLOW;
 			}
 
-			// 以下为调试输出
-
-			ArrayList<Long> idsOnPath = path.getPathInIsisIpFormat();
-			int size = idsOnPath.size();
-			String temp = "result path:";
-
-			for (int x = 0; x < size; x++) {
-				temp += " | "
-						+ this.topo.getMapLongStrId().get(idsOnPath.get(x));
-			}
-
-			System.out.println(temp);
-			System.out
-					.println("***************************************************\n");
-			// 调试输出结束
-			insertFlow(netflow, path, direction);
+			insertFlow(netflow, path, flowDirection);
 		}// end of for
 			// 所有流量都分析完了
 		sendCompleteSignal();// 通知主线程已经分析完了
@@ -250,94 +200,126 @@ public class IsisAnalyser implements Runnable {
 		}
 	}
 
-	/**
-	 * 
-	 * 
-	 * @param srcRouter
-	 * @param brIdList
-	 * @param netflow
-	 * @return
-	 */
-	// private Path computeL1MultiDstPath(long srcId, ArrayList<Long> brIdList,
-	// Netflow netflow) {
-	// if (brIdList == null) {
-	// return null;
-	// }
-	// Path path = null;
-	// int size = brIdList.size();
-	// long dstId = 0;// 记录目的路由器id的临时变量
-	// Path bestPath = new Path();
-	//
-	// for (int i = 0; i < size; i++) { // 遍历所有目的路由器
-	//
-	// dstId = brIdList.get(i);// 得到目的地址
-	// path = computeInternalPath(srcId, dstId);
-	//
-	// if (path == null) {
-	// continue;
-	// }
-	//
-	// if (path.getTotalCost() < bestPath.getTotalCost()) {//
-	// 如果这个目的路由器得到的path的总cost小于当前最小的，则更新最优路径
-	// bestPath = path;// 将当前路径赋值为最短路径
-	// }
-	// }
-	// return bestPath;
-	// }
-
-	public Path computeL2MultiDstPath(long srcId, ArrayList<Object[]> dstMap,
-			Netflow netflow) {
-
+	public void calL1Flow() {
 		Path path = null;
-		int sum = 0;
-		int size = dstMap.size();
-		int asbrToDst = 0;
-		int bestCost = Integer.MAX_VALUE;
-		long dstId = 0;// 记录目的路由器id的临时变量
-		Path bestPath = null;
-		Object[] tempObj = new Object[2];
-		// System.out.println("size:1111  " + size);
-		for (int i = 0; i < size; i++) { // 遍历所有目的路由器
+		Netflow netflow;// 临时变量
+		int resultType;
+		long srcRouterId;
+		long dstRouterId;
+		int flowDirection;
+		boolean srcInside, dstInside;
+		int flowCount = this.netflows.size();// 得到聚合后的netflow列表的条目总数
 
-			tempObj = dstMap.get(i);
-			dstId = (Long) tempObj[0];// 得到目的地址
-			// System.out.println(" outbound!!! dst:"
-			// + IPTranslator.calLongToIp(dstId));
-			asbrToDst = (Integer) tempObj[1];// 得到asbr到目的路由器的metric
+		Object[] dstInfo;
 
-			path = computeInternalPath(srcId, dstId);
+		for (int i = 0; i < flowCount; i++) { // 开始遍历，逐条分析路径
+			srcRouterId = 0;
+			dstRouterId = 0;
+			srcInside = false;
+			dstInside = false;
+			// 开始分析
+			netflow = this.netflows.get(i);// 取得一条流
+
+			// 定位源路由器id
+			srcRouterId = this.topo.getBrIdByIp(netflow.getRouterIP());// 首先根据路由器ip判断源是否是l1/l2路由器
+
+			if (srcRouterId == 0) {
+				srcRouterId = this.topo.getSrcRidByPrefix(netflow.getSrcAddr(),
+						netflow.getSrcMask());
+
+				if (srcRouterId == 0) {
+					netflow.printDetail();
+					debug(netflow.getSrcAddr(), 0);
+					continue;
+				}
+				srcInside = true;
+			}
+			// 定位结束
+
+			// 定位目的路由器
+			dstInfo = this.topo.getRidByPrefixLevel1(netflow.getDstAddr(),
+					netflow.getDstMask());
+			resultType = (Integer) dstInfo[0];
+
+			switch (resultType) {
+			case 1: // 在stub中
+				dstInside = true;
+				dstRouterId = (Long) dstInfo[1];
+				path = processer.getPathByIds(srcRouterId + "_" + dstRouterId);
+				break;
+			case 2:// 都配置重分发的情况要计算源到l1/l2路由器距离
+					// 与重分发报文中宣告的metric之和最小的路径（即整条链路metric最短路径）
+				@SuppressWarnings("unchecked")
+				LinkedList<Reachability> reaches = (LinkedList<Reachability>) dstInfo[1];
+				Iterator<Reachability> iterator = reaches.iterator();
+				int min = Integer.MAX_VALUE;
+
+				while (iterator.hasNext()) {
+					Reachability tmp = iterator.next();
+					Path tmpPath = processer.getPathByIds(srcRouterId + "_"
+							+ tmp.getSysId());
+
+					if (path == null) {
+						continue;
+					}
+
+					int cost = path.getTotalCost() + tmp.getMetric();
+
+					if (cost < min) {
+						min = cost;
+						dstRouterId = tmp.getSysId();
+						path = tmpPath;
+					}
+				}
+
+				break;
+			default:// 如果没有渗透 则得到所有l1/l2路由器id列表，取源到这个id列表之间的最短路径
+				@SuppressWarnings("unchecked")
+				LinkedList<Long> brIds = (LinkedList<Long>) dstInfo[1];
+
+				Iterator<Long> iter = brIds.iterator();
+				min = Integer.MAX_VALUE;
+				Path tmpPath;
+				long tmpId;
+
+				while (iter.hasNext()) {
+					tmpId = iter.next();
+					tmpPath = this.processer.getPathByIds(srcRouterId + "_"
+							+ tmpId);
+
+					if (tmpPath != null && tmpPath.getTotalCost() < min) {
+						min = path.getTotalCost();
+						dstRouterId = tmpId;
+						path = tmpPath;
+					}
+				}
+
+				break;
+			}
 
 			if (path == null) {
+				debug(srcRouterId, dstRouterId);
 				continue;
 			}
 
-			// System.out.println(" transit!!! path:" + path.getPath()
-			// + "  metric:" + path.getTotalCost());
-			sum = path.getTotalCost() + asbrToDst;
-			// System.out.println("sum path id:"
-			// + IPTranslator.calLongToSysId(path.getSourceId()) + " sum:"
-			// + sum);
-			if (sum < bestCost) {// 如果这个目的路由器得到的path的总cost小于当前最小的，则更新最优路径
-				bestPath = path;// 将当前路径赋值为最短路径
-				bestCost = sum;
+			debug(path);
+			// 判断流向
+			if (srcInside) {
+				flowDirection = dstInside ? Constant.INTERNAL_FLOW
+						: Constant.OUTBOUND_FLOW;
+			} else {
+				flowDirection = dstInside ? Constant.INBOUND_FLOW
+						: Constant.TRANSIT_FLOW;
 			}
+
+			insertFlow(netflow, path, flowDirection);
+		}// end of for
+			// 所有流量都分析完了
+		sendCompleteSignal();// 通知主线程已经分析完了
+
+		if (this.allFlowRoute.size() > 0) {
+			writeToDB();// 存入数据库
 		}
-		// System.out.println("best path:" + bestPath.getPath() + " metric:"
-		// + path.getTotalCost());
-		return bestPath;
-	}
-
-	public Path computeInternalPath(long srcId, long dstId) {
-		Path path = this.processer.getPathByIds(srcId + "_" + dstId);// 在成功路径缓存中查找源和目的id对
-
-		if (path == null) {// 如果源和目的在成功路径缓存中，遍历链路，添加flow
-			logger.warning("path for src id:" + IPTranslator.calLongToIp(srcId)
-					+ "  dst id:" + IPTranslator.calLongToIp(dstId)
-					+ "  not found!");
-			return null;
-		}
-
-		return path;
 	}
 
 	// 这里有个优化，将每个源的每次spf算法结束后的最优结构和candidate保存起来，这样下一次计算时，如果源曾经计算过，
@@ -457,7 +439,6 @@ public class IsisAnalyser implements Runnable {
 	}
 
 	public void insertFlow(Netflow netflow, Path path, int direction) {
-
 		ArrayList<Link> links = path.getLinks();
 		Link link = null;
 		int size = links.size();
@@ -465,15 +446,11 @@ public class IsisAnalyser implements Runnable {
 
 		for (int i = 0; i < size; i++) {
 			link = links.get(i);
-			// link.setTotalBytes(bytes);
 			linkId = link.getLinkId();
 			setMapLidTraffic(linkId, netflow.getdOctets(), netflow.getDstPort());
 		}
 		Flow flow = new Flow(this.period, netflow, path, direction);
 		this.allFlowRoute.add(flow);
-		// if (isInTopN(netflow.getdOctets())) {// 如果这条流的flow总大小在topn之中
-		// this.topNFlows.add(flow);// 加入到topN FLOW列表中
-		// }
 	}
 
 	/**
@@ -485,13 +462,21 @@ public class IsisAnalyser implements Runnable {
 			return;
 		}
 
+		String protocal = this.processer.getProtocalByPort(port);// 根据端口号获得协议名字
+
+		// 如果这个端口号没找到相应协议名，记为“other”类型
+		if (protocal == null) {
+			protocal = "other";
+		}
+
 		TrafficLink link = this.mapLidTlink.get(linkId);
 
 		if (link != null) {
-			// link.addTraffic(bytes, port);
+			link.addTraffic(protocal, bytes);
 		} else {
 			link = new TrafficLink(linkId);
-			// link.addTraffic(bytes, port);
+			link.setMapProtocalBytes(this.processer.getMapProtocalBytes());// 用协议名——byte映射初始化trafficlink中的映射
+			link.addTraffic(protocal, bytes);
 			this.mapLidTlink.put(linkId, link);
 		}
 	}
@@ -556,66 +541,38 @@ public class IsisAnalyser implements Runnable {
 		this.netflows = netflows;
 	}
 
-	// public void calL2Flow() {
-	// int direction = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
-	// long srcRouter = 0;
-	// long dstRouter = 0;
-	// long sendDeviceIp = 0; // 记录发送这个netflow报文的接口ip
-	// int flowCount = this.netflows.size();// 得到聚合后的netflow列表的条目总数
-	// Path path = null;
-	// Netflow netflow = null;// 临时变量
-	// ArrayList<Object[]> dstIdMetric = null;
-	//
-	// for (int i = 0; i < flowCount; i++) { // 开始遍历，逐条分析路径
-	// // 重置临时变量
-	// srcRouter = 0;
-	// dstRouter = 0;
-	// dstIdMetric = null;// 清空map
-	// // 开始分析
-	// netflow = this.netflows.get(i);// 取得一条流
-	//
-	// direction = Flow.transit;
-	//
-	// sendDeviceIp = netflow.getRouterIP();// 得到发送这个netflow报文的接口ip
-	// // srcRouter = this.topo.getBrIdByIp(sendDeviceIp);// 在映射中查找对应设备id
-	// srcRouter = this.topo.getRidByPrefix(sendDeviceIp, (byte) 255);
-	//
-	// if (srcRouter == 0) {
-	// continue;
-	// }
-	//
-	// dstIdMetric = topo.getBrByPrefix(netflow.getDstAddr(),
-	// netflow.getDstMask());
-	//
-	// if (dstIdMetric == null || dstIdMetric.size() == 0) {
-	// System.out.println("dst router is zero");
-	// continue;
-	// }
-	// // System.out.println("transit!!! src router id:"
-	// // + IPTranslator.calLongToSysId(srcRouter)
-	// // + "   dst router id:" + dstIdMetric.size());
-	// path = computeL2MultiDstPath(srcRouter, dstIdMetric, netflow);
-	//
-	// if (path == null || path.getLinks().size() == 0) {// 没找到路径，继续分析下一个netflow
-	// this.unfoundPath.add(srcRouter + "_" + dstRouter);// 加入到失败路径缓存中
-	// continue;
-	// }
-	//
-	// this.processer.insertFoundPath(srcRouter + "_" + dstRouter, path);//
-	// 将路径加入成功路径缓存中
-	// // 将源和目的路由器存入列表，下一个周期提前计算最短路径的源和目的对列表
-	// addPreCal(srcRouter, dstRouter);
-	//
-	// System.out.println("result path:" + path.getPathInIpFormat());
-	//
-	// insertFlow(netflow, path, direction);
-	// }// end of for
-	// // 所有流量都分析完了
-	// sendCompleteSignal();// 通知主线程已经分析完了
-	//
-	// if (this.allFlowRoute.size() > 0) {
-	// writeToDB();// 存入数据库
-	// }
-	// // writeToDB();// 存入数据库
-	// }
+	private void debug(Path path) {
+		// 以下为调试输出
+		ArrayList<Long> idsOnPath = path.getPathInIsisIpFormat();
+		int size = idsOnPath.size();
+		String temp = "result path:";
+
+		for (int x = 0; x < size; x++) {
+			temp += " | " + this.topo.getMapLongStrId().get(idsOnPath.get(x));
+		}
+
+		System.out.println(temp);
+		System.out
+				.println("***************************************************\n");
+		// 调试输出结束
+	}
+
+	private void debug(long srcIp, long dstIp) {
+		if (srcIp != 0 && dstIp != 0) {
+			logger.warning("cannot find path for:"
+					+ IPTranslator.calLongToIp(srcIp) + " "
+					+ IPTranslator.calLongToIp(dstIp));
+		} else {
+			if (srcIp != 0) {
+				logger.warning("cannot find prefix for:"
+						+ IPTranslator.calLongToIp(srcIp));
+			} else {
+				logger.warning("cannot find prefix for:"
+						+ IPTranslator.calLongToIp(dstIp));
+			}
+		}
+		System.out
+				.println("***************************************************\n");
+	}
+
 }

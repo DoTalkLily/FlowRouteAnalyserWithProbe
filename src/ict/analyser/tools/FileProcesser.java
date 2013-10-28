@@ -11,7 +11,6 @@ import ict.analyser.config.ConfigData;
 import ict.analyser.flow.TrafficLink;
 import ict.analyser.isistopo.IsisRouter;
 import ict.analyser.isistopo.IsisTopo;
-import ict.analyser.isistopo.Reachability;
 import ict.analyser.ospftopo.AsExternalLSA;
 import ict.analyser.ospftopo.BgpItem;
 import ict.analyser.ospftopo.InterAsLink;
@@ -136,13 +135,16 @@ public class FileProcesser {
 				this.isTopoChanged = false;
 				logger.info("topo not changed ! pid:" + pid);
 			} else {
-				topo = processTopo(jObject);
+				topo = processOspfTopo(jObject.getJSONObject("Topo"));
 
 				// 如果拓扑解析错误，标记拓扑没有改变，用原来的拓扑
 				if (topo == null) {
-					logError("topo process failed!");
+					logError("ospf topo process failed!");
 					return null;
 				}
+
+				int asNumber = jObject.getInt("asNumber");
+				topo.setAsNumber(asNumber); // asNumber
 			}
 
 			// bgp信息和external lsa信息，两者同步变化
@@ -170,7 +172,7 @@ public class FileProcesser {
 					return null;
 				}
 
-				// 如果
+				// 如果没有条目
 				if (mapPrefixBgpItem.size() == 0 && mapPrefixLsa5.size() == 0) {
 					logError("bgp info and lsa5 info are null which should be given");
 					return null;
@@ -192,20 +194,181 @@ public class FileProcesser {
 		return null;
 	}
 
+	public IsisTopo readIsisTopo(String filePath) {
+		this.isOuterChanged = true;// 默认Reachability信息发生改变
+		this.isTopoChanged = true;// 默认拓扑发生改变
+
+		String topoString = "";
+		JSONObject jObject = null;
+
+		try {
+			BufferedReader br = new BufferedReader(new FileReader(filePath));
+			String line = br.readLine();
+
+			while (line != null) {
+				topoString += line;
+				line = br.readLine();
+			}
+
+			br.close();
+			IsisTopo topo = null;
+			jObject = new JSONObject(topoString);
+			this.pid = jObject.getLong("pid");
+			int level = jObject.getInt("level");
+			String areaId = jObject.getString("areaId");
+
+			// 解析开始
+			if (!jObject.has("Topo")) {// 如果拓扑没发生变化——通过判断是否有“topo”key来判断本周期拓扑数据是否发生变化
+				this.isTopoChanged = false;
+				logger.info("isis topo not changed! pid:" + pid);
+			} else {
+				topo = processIsisTopo(jObject.getJSONObject("Topo"));
+
+				// 如果拓扑解析错误，标记拓扑没有改变，用原来的拓扑
+				if (topo == null) {
+					logError("isis topo process failed!");
+					return null;
+				}
+
+				if ((level != 1 && level != 2) || pid <= 0 || areaId == null) {
+					logError("error in isis topo file!");
+					return null;
+				}
+				topo.setAreaId(areaId);
+				topo.setPeriodId(this.pid);
+				topo.setNetworkType(level);
+			}
+
+			if (!jObject.has("reachInfo")) {
+				this.isOuterChanged = false;
+				logger.info("reachability info not changed!pid:" + pid);
+			} else {
+				JSONObject outerInfo = jObject.getJSONObject("reachInfo");
+
+				if (!outerInfo.has("normal") || !outerInfo.has("hybrid")) {
+					logError("error in reachInfo of isis topo file!pid:" + pid);
+					return null;
+				}
+
+				if (topo == null) {
+					topo = new IsisTopo(false);
+				}
+
+				processReachInfo(topo, outerInfo, level);
+			}
+			return topo;
+		} catch (IOException e) {
+			logError(e.toString());
+		} catch (JSONException e) {
+			logError(e.toString());
+		}
+		return null;
+	}
+
+	/**
+	 * 
+	 * @param jObject
+	 * @return
+	 */
+	private IsisTopo processIsisTopo(JSONObject topoObject) {
+		long rid = 0;
+		int metric = 0;
+		int linkId = 0;
+		int sysType = 0;
+		Link link = null;
+		String sysId = null;
+		String nSysId = null;
+		String ipStr = null;
+		IsisTopo topo = new IsisTopo(true);
+
+		try {
+			JSONArray routerArr = topoObject.getJSONArray("router");
+			int size = routerArr.length();
+
+			for (int i = 0; i < size; i++) {
+				JSONObject node = routerArr.getJSONObject(i);
+				IsisRouter router = new IsisRouter();
+				sysId = node.getString("sysId");
+				sysType = node.getInt("sysType");
+
+				if (sysId == null || sysType <= 0) {
+					logger.warning("error in isis topo! sys id:" + sysId);
+					continue;
+				}
+
+				rid = IPTranslator.calSysIdtoLong(sysId);
+				router.setId(rid);
+				router.setLevel(sysType);
+
+				JSONArray neighbors = node.getJSONArray("neighbors");
+				int neighborSize = neighbors.length();
+
+				for (int j = 0; j < neighborSize; j++) {
+					JSONObject neighbor = neighbors.getJSONObject(j);
+
+					linkId = neighbor.getInt("id");
+					nSysId = neighbor.getString("nSysId");
+					metric = neighbor.getInt("metric");
+
+					if (linkId != 0 && nSysId != null) {
+						link = new Link();
+						link.setLinkId(linkId);
+						link.setMyId(rid);
+						link.setNeighborId(IPTranslator.calSysIdtoLong(nSysId));
+						link.setMetric(metric);
+						router.setLink(link);
+					}
+				}
+				// 与拓扑对象相关操作
+				if (sysType == 3) {// 如果是l1/l2路由器
+					topo.addToBrIdList(rid);
+				}
+				topo.setMapLongStrId(rid, sysId);// 保存到rid——sysId映射
+				topo.setMapIdRouter(rid, router);// 保存rid——路由器对象映射
+			}
+
+			// 解析l1/l2路由器 ip——路由器id映射
+			JSONArray mapBrIpId = topoObject.getJSONArray("mapIpId");
+			size = mapBrIpId.length();
+
+			for (int i = 0; i < size; i++) {
+				JSONObject node = mapBrIpId.getJSONObject(i);
+
+				sysId = node.getString("sysId");
+				rid = IPTranslator.calSysIdtoLong(sysId);
+				JSONArray ipArr = node.getJSONArray("ip");
+				int ipCount = ipArr.length();
+
+				for (int j = 0; j < ipCount; j++) {
+					ipStr = ipArr.getString(j);
+
+					if (ipStr != null) {
+						topo.setMapBrIpId(IPTranslator.calIPtoLong(ipStr), rid);
+					}
+				}
+
+			}
+
+			return topo;
+		} catch (JSONException e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
 	private void logError(String msg) {
 		logger.warning(msg);
 		this.isTopoChanged = false;
 		this.isOuterChanged = false;
 	}
 
-	public OspfTopo processTopo(JSONObject jObject) {
+	private OspfTopo processOspfTopo(JSONObject topoObj) {
 		long ip = 0;
 		long rid = 0;
 		int size = 0;
 		int linkId = 0;
 		int metric = 0;
 		long prefix = 0;
-		int asNumber = 0;
 		long nAsNumber = 0;
 		int neighborSize = 0;
 		Link link = null;
@@ -219,11 +382,6 @@ public class FileProcesser {
 		// pid
 		topo.setPeriodId(this.pid);
 		try {
-			// asNumber
-			asNumber = jObject.getInt("asNumber");
-			topo.setAsNumber(asNumber); // asNumber
-			// topo
-			JSONObject topoObj = jObject.getJSONObject("Topo");
 			// nodes
 			JSONArray nodes = topoObj.getJSONArray("nodes");
 			size = nodes.length();
@@ -345,7 +503,98 @@ public class FileProcesser {
 		return null;
 	}
 
-	public HashMap<Long, BgpItem> processBgp(JSONArray bgpObj) {
+	private void processReachInfo(IsisTopo topo, JSONObject reachInfo, int level) {
+		int metric;
+		long sysId;
+		long prefix;
+		String sysIdStr;
+		String prefixStr;
+		JSONArray reachArr;
+		JSONObject reachObj;
+		JSONObject reachItem;
+
+		try {
+			// 解析stub 过后这里考虑去冗余代码
+			JSONArray normal = reachInfo.getJSONArray("normal");// 这里调用函数检验过不是空
+			int count = normal.length();
+
+			for (int i = 0; i < count; i++) {
+				reachObj = normal.getJSONObject(i);
+				sysIdStr = reachObj.getString("sysId");
+
+				if (sysIdStr == null) {
+					continue;
+				}
+
+				reachArr = reachObj.getJSONArray("reachability");
+
+				if (reachArr == null) {
+					continue;
+				}
+
+				int reachCount = reachArr.length();
+				sysId = IPTranslator.calSysIdtoLong(sysIdStr);
+
+				for (int j = 0; j < reachCount; j++) {
+					reachItem = reachArr.getJSONObject(j);
+					metric = reachItem.getInt("metric");
+					prefixStr = reachItem.getString("prefix");
+
+					if (metric <= 0 || prefixStr == null) {
+						continue;
+					}
+
+					prefix = IPTranslator.calIPtoLong(prefixStr);
+					topo.setMapStubPrefixRId(prefix, sysId);
+				}
+			}// end of for
+
+			// 开始解析l1/l2路由器宣告的reachability
+			JSONArray hybrid = reachInfo.getJSONArray("hybrid");// 这里调用函数检验过不是空
+			count = hybrid.length();
+
+			for (int i = 0; i < count; i++) {
+				reachObj = normal.getJSONObject(i);
+				sysIdStr = reachObj.getString("sysId");
+
+				if (sysIdStr == null) {
+					continue;
+				}
+
+				reachArr = reachObj.getJSONArray("reachability");
+
+				if (reachArr == null) {
+					continue;
+				}
+
+				int reachCount = reachArr.length();
+				sysId = IPTranslator.calSysIdtoLong(sysIdStr);
+
+				for (int j = 0; j < reachCount; j++) {
+					reachItem = reachArr.getJSONObject(j);
+					metric = reachItem.getInt("metric");
+					prefixStr = reachItem.getString("prefix");
+
+					if (metric <= 0 || prefixStr == null) {
+						continue;
+					}
+
+					prefix = IPTranslator.calIPtoLong(prefixStr);
+
+					if (level == 1) {
+						topo.setMapPrefixReachForL1(prefix, sysId, metric);
+					} else {
+						topo.setMapPrefixReachForL2(prefix, sysId, metric);
+					}
+				}
+			}// end of for
+		} catch (JSONException e) {
+			e.printStackTrace();
+		}
+
+	}
+
+	private HashMap<Long, BgpItem> processBgp(JSONArray bgpObj) {
 		int len = 0;
 		int origin = 0;
 		int metric = 0;
@@ -496,172 +745,9 @@ public class FileProcesser {
 			return (item1.getMed() > item2.getMed()) ? item2 : item1;// 越小越好
 		}
 
-		// 这里有待扩展…… 13条中7-13条，扩展前，还不能确定唯一一条 就返回第一条
+		// 这里有待扩展…… 13条中7- 12 13条，扩展前，还不能确定唯一一条 最后一条 根据邻居路由器id去判断
+		// 待添加！毕竟优先级选择比较靠后
 		return item1;
-	}
-
-	public IsisTopo readIsisTopo(String filePath) {
-		this.isTopoChanged = true;
-
-		long rid = 0;
-		int level = 0;
-		int metric = 0;
-		int linkId = 0;
-		int sysType = 0;
-		long prefix = 0;
-		Link link = null;
-		String sysId = null;
-		String nSysId = null;
-		String topoString = "";
-		IsisRouter router = null;
-		JSONObject jObject = null;
-		IsisTopo topo = new IsisTopo();
-		ArrayList<Long> brIds = new ArrayList<Long>();
-
-		try {
-			BufferedReader br = new BufferedReader(new FileReader(filePath));
-			String line = br.readLine();
-
-			while (line != null) {
-				topoString += line;
-				line = br.readLine();
-			}
-
-			br.close();
-			jObject = new JSONObject(topoString);
-
-			// 解析开始
-			if (!jObject.has("Topo")) {// 如果拓扑没发生变化——通过判断是否有“topo”key来判断本周期拓扑数据是否发生变化
-				this.pid = jObject.getLong("pid");
-				this.isTopoChanged = false;
-				logger.info("pid:" + pid);
-				return null;
-			}
-
-			level = jObject.getInt("level");
-
-			if (level != 2 && level != 1) {
-				return null;
-			}
-
-			String areaId = jObject.getString("areaId");
-
-			if (areaId == null) {
-				return null;
-			}
-
-			JSONObject jTopo = jObject.getJSONObject("Topo");
-			this.pid = jTopo.getLong("pid");
-			topo.setPeriodId(this.pid);
-			topo.setNetworkType(level);
-			logger.info("pid : " + pid);
-
-			JSONArray nodes = jTopo.getJSONArray("nodes");
-			int size = nodes.length();
-			int nSize = 0;
-
-			for (int i = 0; i < size; i++) {
-				router = new IsisRouter();
-				JSONObject node = nodes.getJSONObject(i);
-				sysType = node.getInt("sysType");
-
-				router.setLevel(sysType);
-
-				sysId = node.getString("sysId");
-
-				// System.out.println("sysid:" + sysId);
-				if (sysId == null) {
-					return null;
-				}
-
-				rid = IPTranslator.calSysIdtoLong(sysId);
-
-				if (sysType == 3) {
-					brIds.add(rid);
-					// System.out.println("id add!:" + sysId);
-				}
-
-				router.setId(rid);
-				topo.setMapLongStrId(rid, sysId);
-				// System.out.println(rid);
-				JSONArray neighbors = node.getJSONArray("neighbors");
-				nSize = neighbors.length();
-
-				for (int j = 0; j < nSize; j++) {
-					JSONObject neighbor = neighbors.getJSONObject(j);
-					linkId = neighbor.getInt("id");
-					nSysId = neighbor.getString("nSysId");
-					metric = neighbor.getInt("metric");
-
-					if (linkId != 0 && nSysId != null) {
-						// topo.setMapLinkIdByte(linkId);
-						topo.setMapLidTraffic(linkId);
-						link = new Link();
-						link.setLinkId(linkId);
-						link.setMyId(rid);
-						link.setNeighborId(IPTranslator.calSysIdtoLong(nSysId));
-						link.setMetric(metric);
-						router.setLink(link);
-					}
-				}
-				topo.setMapIdRouter(rid, router);
-			}
-
-			if (level == 1) {// 如果是1型网络，还要保存所有边界路由器的id，因为要全算
-				topo.setBrIdList(brIds);
-			}
-
-			JSONArray reaches = jObject.getJSONArray("Reachability");
-
-			if (reaches == null) {
-				return null;
-			}
-
-			size = reaches.length();
-			JSONObject reach = null;
-			Reachability r1 = null;
-
-			for (int i = 0; i < size; i++) {
-				reach = reaches.getJSONObject(i);
-
-				if (reach == null) {
-					return null;
-				}
-
-				sysId = reach.getString("sysId");
-
-				if (sysId == null) {
-					return null;
-				}
-
-				metric = reach.getInt("metric");
-				prefix = reach.getLong("prefix");
-
-				rid = IPTranslator.calSysIdtoLong(sysId);
-
-				if (level == 2) {//
-					// 如果是l1型网络，只存视图stub类型的prefix——id映射，不存reachability，如果是2型都存
-					if (brIds.contains(rid)) {// 如果这个路由器id在保存所有l1/l2的路由器id列表中
-						r1 = new Reachability();
-						r1.setSysId(rid);
-						r1.setPrefix(prefix);
-						r1.setMetric(metric);
-						topo.setMapPrefixReach(prefix, r1);
-					}
-				}
-
-				topo.setMapPrefixRouterId(prefix, rid);// 存stub
-				// System.out.println("prefix:" +
-				// IPTranslator.calLongToIp(prefix)
-				// + " rid:" + rid);
-			}
-
-		} catch (IOException e) {
-			e.printStackTrace();
-		} catch (JSONException e) {
-			e.printStackTrace();
-		}
-		return topo;
 	}
 
 	public String writeResult(HashMap<Integer, TrafficLink> mapLidTlink,

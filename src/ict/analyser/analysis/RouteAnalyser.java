@@ -135,11 +135,11 @@ public class RouteAnalyser {
 
 	}
 
-	public void isisRouteCalculate(long pid) {
-		this.period = pid;
+	public void isisRouteCalculate(long period) {
 		int eachSize = 0;
-		int flowSize = this.netflows.size(); // 获得全部netflow的条目总数
+		this.period = period;
 		IsisAnalyser isisAnalyser = null;// isis路径分析类
+		int flowSize = this.netflows.size(); // 获得全部netflow的条目总数
 		this.divideCount = (MainProcesser.DIVIDE_COUNT == 0) ? 3
 				: MainProcesser.DIVIDE_COUNT;
 

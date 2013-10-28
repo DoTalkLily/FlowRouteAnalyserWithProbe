@@ -204,12 +204,7 @@ public class MainProcesser {
 		}
 
 		PID = this.isisTopo.getPeriodId();
-
-		if (this.topoReceiver.isTopoChanged()) {// 如果topo发生改变
-			this.routeAnalyser.setTopo(this.isisTopo);// 设置新的拓扑对象给分析线程
-		} else {
-			this.isisTopo.resetTrafficData(); // 否则用原来拓扑对象，但是拓扑对象中id_trafficlink映射的link上的业务流量大小要置0
-		}
+		this.routeAnalyser.setTopo(this.isisTopo);// 设置新的拓扑对象给分析线程
 
 		if (PID_INDEX == 1) { // 第一个周期提前计算路径
 			routeAnalyser.isisPreCalculate();

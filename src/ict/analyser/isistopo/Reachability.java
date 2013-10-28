@@ -14,9 +14,7 @@ package ict.analyser.isistopo;
  */
 public class Reachability {
 	private long sysId = 0;
-
 	private long prefix = 0;
-
 	private int metric = 0;
 
 	/**

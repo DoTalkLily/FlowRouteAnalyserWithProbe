@@ -12,14 +12,10 @@
  */
 package ict.analyser.isistopo;
 
-import ict.analyser.flow.TrafficLink;
 import ict.analyser.tools.IPTranslator;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Map.Entry;
+import java.util.LinkedList;
 
 /**
  * 
@@ -30,144 +26,69 @@ import java.util.Map.Entry;
 public class IsisTopo {
 	private long periodId = 0;// 周期id
 	private int networkType = 0;// 判断是level2——2 还是level1——1
-	private ArrayList<Long> asbrIdList = null;// 保存全部的l1/l2路由器id
-	private ArrayList<Long> allRouterIds = null;// 保存全网路由器id列表
+	private String areaId = null;// 区域id
+	private LinkedList<Long> borderIdList = null;// 保存全部的l1/l2路由器id
 	private HashMap<Long, Long> mapBrIpId = null;// ASBR的接口ip(long)——设备id
-	private HashMap<Long, Long> mapIpRouterId = null;// 全部路由器ip地址和router id映射
 	private HashMap<Long, String> mapLongStrId = null;// long型id——string型id映射
 	private HashMap<Long, IsisRouter> mapIdRouter = null;// router id ——router映射
-	private HashMap<Long, Long> mapPrefixRouterId = null;// 拓扑中前缀与路由器id对应的映射,用于根据prefix查找路由器id
-	private HashMap<Integer, TrafficLink> mapLidTlink = null;// linkid——TrafficLink
-	private HashMap<Long, ArrayList<Reachability>> mapPrefixReach = null;// 前缀——可达性对象映射
+	private HashMap<Long, Long> mapPrefixRidForStub = null;// 只保存经过‘过滤’过的可能连接终端的‘stub’子网preifx——id映射
+	private HashMap<Long, Reachability> mapPrefixRidForL2 = null;// level2内保存边界路由器宣告的前缀信息——路由器id映射
+	private HashMap<Long, LinkedList<Reachability>> mapPrefixReachForL1 = null;// level1网络专用前缀——可达性对象映保存l1/l2宣告的reachability信息
 
-	public IsisTopo() {
-		this.allRouterIds = new ArrayList<Long>();
+	public IsisTopo(boolean initial) {
+		if (!initial) {
+			return;
+		}
+
 		this.mapBrIpId = new HashMap<Long, Long>();
-		this.mapIpRouterId = new HashMap<Long, Long>();
 		this.mapLongStrId = new HashMap<Long, String>();
 		this.mapIdRouter = new HashMap<Long, IsisRouter>();
-		this.mapPrefixRouterId = new HashMap<Long, Long>();
-		this.mapLidTlink = new HashMap<Integer, TrafficLink>();
-		this.mapPrefixReach = new HashMap<Long, ArrayList<Reachability>>();
+		this.mapPrefixRidForStub = new HashMap<Long, Long>();
+		this.mapPrefixRidForL2 = new HashMap<Long, Reachability>();
+		this.mapPrefixReachForL1 = new HashMap<Long, LinkedList<Reachability>>();
 	}
 
 	/**
-	 * 这里只保存stub网络的prefix ——id 映射（待使用）
+	 * 这里只保存stub网络的prefix ——id
 	 * 
 	 * @param mapPrefixRouterId
 	 *            The mapPrefixRouterId to set.
 	 */
-	public void setMapPrefixRouterId(long prefix, long rid) {
-		// 以下注释待叶子节点可以配了再启用
-
-		// Object obj = this.mapPrefixRouterId.get(prefix);
-		// long routerId = (obj == null) ? 0 : (Long) obj;
-
-		// if (routerId != 0 && routerId != rid) {//
-		// 这个prefix不只一个路由器宣告过，这样的不存,这样保存了stub的
-		// this.mapPrefixRouterId.remove(prefix);
-		// } else {
-		// this.mapPrefixRouterId.put(prefix, rid);
-		// // System.out.println("added prefix:"
-		// // + IPTranslator.calLongToIp(prefix) + "  router id:"
-		// // + IPTranslator.calLongToIp(rid));
-		// }
-		this.mapPrefixRouterId.put(prefix, rid);
-	}
-
-	/**
-	 * 每周期结束清空map id——traffic对应的traffic信息
-	 */
-	public void resetTrafficData() {
-		if (this.mapLidTlink == null) {
+	public void setMapStubPrefixRId(long prefix, long rid) {
+		if (prefix <= 0 || rid <= 0) {
 			return;
 		}
 
-		TrafficLink link = null;
-		Map.Entry<Integer, TrafficLink> entry = null;
-		Iterator<Entry<Integer, TrafficLink>> iter = this.mapLidTlink
-				.entrySet().iterator();
-
-		while (iter.hasNext()) {
-			entry = iter.next();
-			link = entry.getValue();
-
-			if (link == null) {
-				continue;
-			}
-
-			link.resetValues();
+		if (this.mapPrefixRidForStub.containsKey(prefix)) {// 如果有就说明不是stub网段，删除，否则添加
+			this.mapPrefixRidForStub.remove(prefix);
+		} else {
+			this.mapPrefixRidForStub.put(prefix, rid);
 		}
-	}
-
-	public void setMapIpRouter(long ip, long routerId) {
-		this.mapIpRouterId.put(ip, routerId);
 	}
 
 	/**
-	 * @param mapPrefixReach
-	 *            The mapPrefixReach to set.
+	 * @param mapPrefixReachForL1
+	 *            level1
+	 *            网络中，由于要考虑重分发，因此这里保存所有边界路由器宣告的prefix——List<Reachability>映射
+	 * 
 	 */
-	public void setMapPrefixReach(long prefix, Reachability reach) {
-
-		ArrayList<Reachability> reachList = this.mapPrefixReach.get(prefix);
-		if (reachList != null) {
-			// System.out.println("put reach:prefix:"
-			// + IPTranslator.calLongToIp(prefix)
-			// + IPTranslator.calLongToSysId(reach.getSysId()));
-			reachList.add(reach);
-		} else {
-			reachList = new ArrayList<Reachability>();
-			reachList.add(reach);
-			// System.out.println("aaa put reach:prefix:"
-			// + IPTranslator.calLongToIp(prefix) + " reach:"
-			// + IPTranslator.calLongToSysId(reach.getSysId()));
-			this.mapPrefixReach.put(prefix, reachList);
+	public void setMapPrefixReachForL1(long prefix, long sysId, int metric) {
+		if (prefix <= 0 || sysId <= 0) {
+			return;
 		}
 
-	}
+		Reachability reach = new Reachability();
+		reach.setSysId(sysId);
+		reach.setPrefix(prefix);
+		reach.setMetric(metric);
 
-	public ArrayList<Object[]> getBrByPrefix(long ip, byte mask) {
-		Object[] br = null;
-		long dMask = IPTranslator.calByteToLong(mask);
-		long prefix = ip & dMask;
-		// System.out.println("prefix!!!" + IPTranslator.calLongToIp(prefix));
-		ArrayList<Object[]> brList = new ArrayList<Object[]>();
-		ArrayList<Reachability> reachList = this.mapPrefixReach.get(prefix);
-		if (reachList != null) {
-			int size = reachList.size();
-			Reachability reach = null;
-			for (int i = 0; i < size; i++) {
-				reach = reachList.get(i);
-				br = new Object[2];
-				br[0] = reach.getSysId();
-				br[1] = reach.getMetric();
-				brList.add(br);
-			}
+		if (this.mapPrefixReachForL1.containsKey(prefix)) {
+			this.mapPrefixReachForL1.get(prefix).add(reach);
 		} else {
-			int changeCount = 1;
-			while (changeCount < 24) { // 循环移位截止：255.0.0.0
-				changeCount++;
-				// prefix = IPTranslator.getChangedPrefix(ip, dMask);//
-				// 计算新的prefix
-				prefix <<= 1;
-				reachList = this.mapPrefixReach.get(prefix);// 在映射中查找对应reachability
-															// list
-				if (reachList != null) {// 如果找到了external lsa列表
-					int size = reachList.size();
-					Reachability reach = null;
-					for (int i = 0; i < size; i++) {
-						reach = reachList.get(i);
-						br = new Object[2];
-						br[0] = reach.getSysId();
-						br[1] = reach.getMetric();
-						brList.add(br);
-					}
-					break;
-				}
-			}
+			LinkedList<Reachability> list = new LinkedList<Reachability>();
+			list.add(reach);
+			this.mapPrefixReachForL1.put(prefix, list);
 		}
-		return brList;
 	}
 
 	/**
@@ -187,71 +108,119 @@ public class IsisTopo {
 
 	}
 
+	/*
+	 * ‘源’根据router ip定位到某个L1/l2路由器，或者在某个stub中
+	 */
+	public long getSrcRidByPrefix(long ip, byte mask) {
+		long dmask = IPTranslator.calByteToLong(mask);
+		long prefix = ip & dmask;
+		int changeCount = 0;
+		Object obj;
+
+		while (changeCount < 24) {
+			obj = this.mapPrefixRidForStub.get(prefix);
+
+			if (obj != null) {// 在前缀——路由器id映射中查找路由器id
+				return (Long) obj;
+			}
+
+			changeCount++;
+			dmask <<= 1;
+			prefix = ip & dmask;// 根据ip和新的mask再计算prefix
+		}
+
+		return 0;
+	}
+
 	/**
-	 * 根据ip，mask查找对应路由器id
+	 * 根据ip，mask在stub中查找对应路由器id
 	 * 
 	 * @param ip
 	 * @param mask
 	 * @return 路由器id
 	 */
-	public long[] getRidByPrefix(long ip, byte mask) {
-
+	public Object[] getRidByPrefixLevel1(long ip, byte mask) {
 		long dmask = IPTranslator.calByteToLong(mask);
 		long prefix = ip & dmask;
-		long[] result = new long[2];
-
-		Object obj = this.mapPrefixRouterId.get(prefix);// 在前缀——路由器id映射中查找路由器id
-
-		if (obj != null) {
-			result[0] = (Long) obj;
-			result[1] = prefix;
-			return result;
-		}
+		Object[] result = new Object[2];// 当在stub中找到prefix，则只返回一个id，在prefixReach映射中找到，则或者是一个id，或者是id——metric映射，两个里面都没找到，
+										// 则返回保存所有l1/l2路由器的id列表，在level2网络中只会有前两种情况发生，
+										// 第一个obj是一个标记，i表示第i中情况
 
 		// 如果没找到这个prefix，循环移位重新计算prefix再查找
-		int changeCount = 1;
-		// Set<Long> set = this.mapPrefixRouterId.keySet();
-		// Iterator<Long> it = set.iterator();
-		// while(it.hasNext())
-		// {
-		// long key = it.next();
-		// long rid = this.mapPrefixRouterId.get(key);
-		// System.out.println(IPTranslator.calLongToIp(key)
-		// +"  id: "+this.mapLongStrId.get(rid));
-		// }
-		//
+		int changeCount = 0;
+		Object obj;
+
 		while (changeCount < 24) {
+			if (this.mapPrefixRidForStub.containsKey(prefix)) {// 在前缀——路由器id映射中查找路由器id
+				obj = this.mapPrefixRidForStub.get(prefix);
+				result[0] = 1;
+				result[1] = obj;
+				return result;
+			}
+
+			if (this.mapPrefixReachForL1.containsKey(prefix)) {
+				LinkedList<Reachability> list = this.mapPrefixReachForL1
+						.get(prefix);
+				result[0] = 2;
+				result[1] = list;
+			}
+
 			changeCount++;
 			dmask <<= 1;
 			prefix = ip & dmask;// 根据ip和新的mask再计算prefix
+		}
 
-			// prefix = (prefix << 1)&0x00000000ffffffff;
-			obj = this.mapPrefixRouterId.get(prefix);// 再查找
+		result[0] = 3;
+		result[1] = this.getBrIdList();
+		return result;
+	}
 
-			// System.out.println("changed prefix:"+
-			// IPTranslator.calLongToIp(prefix)+"   id:"+ obj);
-			if (obj != null) {// 如果找到了，返回
-				result[0] = (Long) obj;
-				result[1] = prefix;
+	/**
+	 * 根据ip，mask在stub中查找对应路由器id
+	 * 
+	 * @param ip
+	 * @param mask
+	 * @return 路由器id
+	 */
+	public Object[] getRidByPrefixLevel2(long ip, byte mask) {
+		long dmask = IPTranslator.calByteToLong(mask);
+		long prefix = ip & dmask;
+		Object[] result = new Object[2];// 当在stub中找到prefix，则只返回一个id，在prefixReach映射中找到，则或者是一个id，或者是id——metric映射，两个里面都没找到，
+										// 则返回保存所有l1/l2路由器的id列表，在level2网络中只会有前两种情况发生，
+										// 第一个obj是一个标记，i表示第i种情况
+
+		int changeCount = 0;
+		Object obj;
+
+		while (changeCount < 24) {
+			if (this.mapPrefixRidForStub.containsKey(prefix)) {// 在前缀——路由器id映射中查找路由器id
+				obj = this.mapPrefixRidForStub.get(prefix);
+				result[0] = 1;
+				result[1] = obj;
 				return result;
 			}
+
+			if (this.mapPrefixRidForL2.containsKey(prefix)) {
+				Reachability reach = this.mapPrefixRidForL2.get(prefix);
+				result[0] = 2;
+				result[1] = reach.getSysId();
+				return result;
+			}
+
+			changeCount++;
+			dmask <<= 1;
+			prefix = ip & dmask;// 根据ip和新的mask再计算prefix
 		}
+
 		return null;
 	}
 
 	public long getBrIdByIp(long ip) {
-
-		Object obj = this.mapBrIpId.get(ip);
-
-		if (obj == null) {
-			// obj = this.mapPrefixRouterId.get(ip);
-			// if (obj == null) {
+		if (ip <= 0 || !this.mapBrIpId.containsKey(ip)) {
 			return 0;
-			// }
-			// return (Long) obj;
-		} else {
-			return (Long) obj;
 		}
+
+		return this.mapBrIpId.get(ip);
 	}
 
 	/**
@@ -259,20 +228,6 @@ public class IsisTopo {
 	 */
 	public HashMap<Long, IsisRouter> getMapIdRouter() {
 		return mapIdRouter;
-	}
-
-	/**
-	 * @return Returns the mapPrefixRouterId.
-	 */
-	public HashMap<Long, Long> getMapPrefixRouterId() {
-		return mapPrefixRouterId;
-	}
-
-	/**
-	 * @return Returns the mapPrefixReach.
-	 */
-	public HashMap<Long, ArrayList<Reachability>> getMapPrefixReach() {
-		return mapPrefixReach;
 	}
 
 	/**
@@ -285,27 +240,10 @@ public class IsisTopo {
 		}
 
 		this.mapIdRouter.put(rid, router);
-		this.allRouterIds.add(rid);
 	}
 
 	public void setMapBrIpId(long ip, long id) {
 		this.mapBrIpId.put(ip, id);
-	}
-
-	public void setMapLidTraffic(int id) {
-		if (id == 0) {
-			return;
-		}
-
-		TrafficLink link = new TrafficLink(id);
-		this.mapLidTlink.put(id, link);
-	}
-
-	/**
-	 * @return Returns the mapLidTlink.
-	 */
-	public HashMap<Integer, TrafficLink> getMapLidTlink() {
-		return mapLidTlink;
 	}
 
 	/**
@@ -341,16 +279,23 @@ public class IsisTopo {
 	/**
 	 * @return Returns the asbrIdList.
 	 */
-	public ArrayList<Long> getBrIdList() {
-		return asbrIdList;
+	public LinkedList<Long> getBrIdList() {
+		return borderIdList;
 	}
 
 	/**
 	 * @param asbrIdList
 	 *            The asbrIdList to set.
 	 */
-	public void setBrIdList(ArrayList<Long> asbrIdList) {
-		this.asbrIdList = asbrIdList;
+	public void addToBrIdList(long brId) {
+		if (brId <= 0) {
+			return;
+		}
+
+		if (this.borderIdList == null) {
+			this.borderIdList = new LinkedList<Long>();
+		}
+		this.borderIdList.add(brId);
 	}
 
 	public HashMap<Long, String> getMapLongStrId() {
@@ -363,21 +308,105 @@ public class IsisTopo {
 		}
 	}
 
-	/*
-	 * 返回拓扑中路由器数量
+	/**
+	 * @return Returns the areaId.
 	 */
-	public int getRouterCount() {
-		if (this.allRouterIds == null) {
-			return 0;
+	public String getAreaId() {
+		return areaId;
+	}
+
+	/**
+	 * @param areaId
+	 *            The areaId to set.
+	 */
+	public void setAreaId(String areaId) {
+		this.areaId = areaId;
+	}
+
+	/**
+	 * @param mapPrefixRidForL2
+	 *            level2网络中，要考虑路由聚合情况，分为： 1. 如果所有边界路由器都配置路由聚合，那么选宣告metric最小的 2.
+	 *            如果有配置聚合，有没配置聚合，那么用最长匹配，如果有多个最长匹配，选metric最小的，暂不考虑负载分担
+	 */
+	public void setMapPrefixReachForL2(long prefix, long sysId, int metric) {
+		if (prefix <= 0 || sysId <= 0) {
+			return;
 		}
 
-		return this.allRouterIds.size();
+		if (this.mapPrefixRidForL2.containsKey(prefix)) {
+			Reachability tmp = this.mapPrefixRidForL2.get(prefix);
+
+			if (tmp.getMetric() > metric) {
+				tmp.setMetric(metric);
+				tmp.setSysId(sysId);
+			}
+		} else {
+			Reachability reach = new Reachability();
+			reach.setSysId(sysId);
+			reach.setMetric(metric);
+			reach.setPrefix(prefix);
+			this.mapPrefixRidForL2.put(prefix, reach);
+		}
 	}
 
-	/*
-	 * 返回全网路由器id列表
+	/**
+	 * 获得所有路由器总数
+	 * 
+	 * @return
 	 */
-	public ArrayList<Long> getAllRouterIds() {
-		return this.allRouterIds;
+	public int getRouterCount() {
+		return this.mapIdRouter.size();
 	}
+
+	/**
+	 * @return Returns the mapPrefixRidForStub.
+	 */
+	@SuppressWarnings("unchecked")
+	public HashMap<Long, Long> getMapPrefixRidForStub() {
+		return (HashMap<Long, Long>) mapPrefixRidForStub.clone();
+	}
+
+	/**
+	 * @return Returns the mapPrefixRidForL2.
+	 */
+	@SuppressWarnings("unchecked")
+	public HashMap<Long, Reachability> getMapPrefixRidForL2() {
+		return (HashMap<Long, Reachability>) mapPrefixRidForL2.clone();
+	}
+
+	/**
+	 * @return Returns the mapPrefixReachForL1.
+	 */
+	@SuppressWarnings("unchecked")
+	public HashMap<Long, LinkedList<Reachability>> getMapPrefixReachForL1() {
+		return (HashMap<Long, LinkedList<Reachability>>) mapPrefixReachForL1
+				.clone();
+	}
+
+	/**
+	 * @param mapPrefixRidForStub
+	 *            The mapPrefixRidForStub to set.
+	 */
+	public void setMapPrefixRidForStub(HashMap<Long, Long> mapPrefixRidForStub) {
+		this.mapPrefixRidForStub = mapPrefixRidForStub;
+	}
+
+	/**
+	 * @param mapPrefixRidForL2
+	 *            The mapPrefixRidForL2 to set.
+	 */
+	public void setMapPrefixRidForL2(
+			HashMap<Long, Reachability> mapPrefixRidForL2) {
+		this.mapPrefixRidForL2 = mapPrefixRidForL2;
+	}
+
+	/**
+	 * @param mapPrefixReachForL1
+	 *            The mapPrefixReachForL1 to set.
+	 */
+	public void setMapPrefixReachForL1(
+			HashMap<Long, LinkedList<Reachability>> mapPrefixReachForL1) {
+		this.mapPrefixReachForL1 = mapPrefixReachForL1;
+	}
+
 }

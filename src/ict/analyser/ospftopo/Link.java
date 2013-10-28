@@ -7,6 +7,7 @@
 package ict.analyser.ospftopo;
 
 /**
+ * 这种存储方式非常占内存！
  * 
  * @author 25hours
  * @version 1.0, 2012-10-18
