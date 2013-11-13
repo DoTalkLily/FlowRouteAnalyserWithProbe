@@ -29,7 +29,6 @@ import java.util.logging.Logger;
  * @version 1.1, 2013-2-18 加出错重连接机制和数据传输中断处理机制
  */
 public class FlowReceiver extends TimerTask {
-
 	private Socket client = null;// 保存接收到连接的socket
 	private byte[] allBytes = null;// 从硬件设备收到的全部bytes
 	private static int INDEX = 0;// 将流量byte拷贝到单个byte数组的索引

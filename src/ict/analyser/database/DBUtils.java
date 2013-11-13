@@ -18,12 +18,11 @@ import java.util.Vector;
  * @version 1.0, 2012-12-8
  */
 public class DBUtils {
-
 	private final static String DRIVER = "com.mysql.jdbc.Driver";
 	private final static String URL = "jdbc:mysql://127.0.0.1:3306/netflow";
 	private final static String USER = "root";
 	private final static String PASSWORD = "qazwsx";
-	private static Vector<Connection> pool = new Vector<Connection>();//去掉了final
+	private static Vector<Connection> pool = new Vector<Connection>();// 去掉了final
 	private static final int MAX_SIZE = 10;
 	private static final int MIN_SIZE = 3;
 
@@ -34,7 +33,6 @@ public class DBUtils {
 	}
 
 	private static Connection createConnction() {
-
 		Connection conn = null;
 		try {
 			Class.forName(DRIVER);
@@ -50,8 +48,8 @@ public class DBUtils {
 	}
 
 	public static synchronized Connection getConnection() {
-
 		Connection conn = null;
+
 		if (pool.isEmpty()) {
 			conn = createConnction();
 		} else {
@@ -64,7 +62,6 @@ public class DBUtils {
 	}
 
 	public static synchronized void close(Connection conn) {
-
 		if (pool.size() < MAX_SIZE) {
 			pool.add(conn);
 		} else {

@@ -87,12 +87,12 @@ public class FileProcesser {
 
 			for (int i = 0; i < size; i++) {
 				obj = observePorts.getJSONObject(i);
-				protocal = obj.getString("protocal");
+				protocal = obj.getString("protocol");
 				portArr = obj.getJSONArray("ports");
 				portSize = portArr.length();
 
 				for (int j = 0; j < portSize; j++) {
-					port = portArr.getInt(i);
+					port = portArr.getInt(j);
 					mapPortProtocal.put(port, protocal);
 				}
 			}
@@ -653,6 +653,8 @@ public class FileProcesser {
 					prefixLong = IPTranslator.calIPtoLong(prefix);
 					item.setPrefix(prefixLong);
 					item.setNextHop(IPTranslator.calIPtoLong(nextHop));
+
+					item.printDetail();// test
 
 					bgpItem = mapPrefixBgp.get(prefixLong);
 

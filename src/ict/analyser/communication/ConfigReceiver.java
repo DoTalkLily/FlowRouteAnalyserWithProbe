@@ -107,10 +107,13 @@ public class ConfigReceiver extends Thread {
 			if (this.fileIn != null) {
 				read = this.fileIn.read(buf);
 			}
+
 			passedlen += read;
+
 			if (read == -1) {
 				break;
 			}
+
 			this.fileOut.write(buf, 0, read);
 		}
 		System.out.println("配置文件接收了" + passedlen + "B");
@@ -148,6 +151,7 @@ public class ConfigReceiver extends Thread {
 		try {
 			this.configData = FileProcesser.readConfigData(SAVE_PATH);// 调用处理config文件函数
 																		// 写在FileProcesser里
+			this.configData.printDetail();// 打印config
 			condition.signalAll();// 发送信号唤醒等待
 		} finally {
 			locker.unlock();

@@ -132,7 +132,7 @@ public class RouteAnalyser {
 				gatherResult(ospfAnalyser);
 			}
 		}
-
+		System.out.println("all flow size:" + this.netflows.size());
 	}
 
 	public void isisRouteCalculate(long period) {
@@ -326,6 +326,12 @@ public class RouteAnalyser {
 		Entry<Integer, String> entry;
 		Iterator<Entry<Integer, String>> iterator = mapPortProtocal.entrySet()
 				.iterator();
+
+		if (this.mapProtocalBytes == null) {
+			this.mapProtocalBytes = new HashMap<String, Long>();
+		} else {
+			this.mapProtocalBytes.clear();
+		}
 
 		while (iterator.hasNext()) {
 			entry = iterator.next();

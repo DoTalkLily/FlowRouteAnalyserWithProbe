@@ -13,10 +13,10 @@
 package ict.analyser.config;
 
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map.Entry;
 
 /**
- * {"protocol":"ospf","interval":2,"topN":10,"globalAnalysisIP":"127.0.0.1",
- * "inAdvance":8,"globalAnalysisPort":33399,"samplingRate":3000}
  * 
  * @author 25hours
  * @version 1.0, 2012-10-15
@@ -151,4 +151,27 @@ public class ConfigData {
 		this.samplingRate = samplingRate;
 	}
 
+	// for test
+	public void printDetail() {
+		if (this.mapPortProtocal == null) {
+			System.out.println("no config data!");
+			return;
+		}
+
+		System.out.println("topN:" + this.topN + " interval:" + this.interval
+				+ " inAdvance:" + this.inAdvance + "  samplingRate:"
+				+ samplingRate + " globalAnalysisIp:" + this.globalAnalysisIP
+				+ " globalAnalysisPort:" + this.globalAnalysisPort
+				+ " protocal:" + this.protocol);
+
+		Entry<Integer, String> entry;
+		Iterator<Entry<Integer, String>> iterator = this.mapPortProtocal
+				.entrySet().iterator();
+
+		while (iterator.hasNext()) {
+			entry = iterator.next();
+			System.out.println("port:" + entry.getKey() + " protocal:"
+					+ entry.getValue());
+		}
+	}
 }

@@ -6,6 +6,8 @@
  */
 package ict.analyser.ospftopo;
 
+import ict.analyser.tools.IPTranslator;
+
 import java.util.ArrayList;
 
 /**
@@ -170,4 +172,11 @@ public class BgpItem implements Cloneable {
 		this.med = metric;
 	}
 
+	public void printDetail() {
+		System.out.println("origin:" + origin + "  weight:" + weight
+				+ "  length:" + length + "  med:" + med + " prefix:"
+				+ IPTranslator.calLongToIp(prefix) + "  nexthop:"
+				+ IPTranslator.calLongToIp(nextHop) + " localpreference:"
+				+ localProference + " aspath:" + asPath.toString());
+	}
 }
