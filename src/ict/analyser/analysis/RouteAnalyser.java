@@ -73,7 +73,7 @@ public class RouteAnalyser {
 
 		this.index = 0;// 索引从零开始记
 		this.allRouterIds = this.ospfTopo.getAllRouterIds();// 得到全部路由器id列表，供n个线程互斥访问
-		this.divideCount = (MainProcesser.DIVIDE_COUNT == 0) ? 3
+		this.divideCount = (MainProcesser.DIVIDE_COUNT == 0) ? 5
 				: MainProcesser.DIVIDE_COUNT;
 
 		for (int i = 0; i < this.divideCount; i++) {
@@ -103,7 +103,14 @@ public class RouteAnalyser {
 		}
 	}
 
-	public void ospfRouteCalculate(long period) {
+	long start = 0;
+	int flowCount = 0;
+
+	public void ospfRouteCalculate(long period, int count) {
+		start = System.currentTimeMillis();
+		logger.info("start the timer:" + start);
+		flowCount = count;
+
 		int eachSize = 0;
 		this.period = period;
 		OspfAnalyser ospfAnalyser = null;// 临时变量
@@ -132,7 +139,9 @@ public class RouteAnalyser {
 				gatherResult(ospfAnalyser);
 			}
 		}
-		System.out.println("all flow size:" + this.netflows.size());
+
+		long interval = System.currentTimeMillis() - start;
+		logger.info("flow count:" + flowCount + "  in :" + interval);
 	}
 
 	public void isisRouteCalculate(long period) {

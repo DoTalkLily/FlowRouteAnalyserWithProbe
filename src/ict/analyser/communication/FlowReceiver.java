@@ -43,6 +43,7 @@ public class FlowReceiver extends TimerTask {
 	private static boolean GET_WHOLE_BYTE = false;// 是否正在接收流量传输
 	private static boolean PROCESS_FLOW_FINISHED = false;// 是否已将全部bytes解析成流量对象
 	private static String IP = "localhost"; // 请求流量的地址
+	// private static String IP = "10.21.3.165"; // 请求流量的地址
 	private Lock lock = null;// 加锁
 	private DataInputStream in = null;// 输入流
 	private DataOutputStream out = null;// 输出流到本地文件

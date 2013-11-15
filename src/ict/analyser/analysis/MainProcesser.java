@@ -39,8 +39,8 @@ public class MainProcesser {
 	static int TOPN = 50;// topN
 	static int PID_INDEX = 1;// 周期索引
 	static int INTERVAL = 15;// 配置文件中获得的计算周期单位:min
-	static int DIVIDE_COUNT = 3;// 将所有的netflow报文分成多少份，决定生成多少个线程进行路径分析
-	static int DELAY = 20 * 1000;// 提前接收拓扑的时间，流量接收是时间出发的，从第二周期起，接收到拓扑后的delay秒发送流量请求
+	static int DIVIDE_COUNT = 5;// 将所有的netflow报文分成多少份，决定生成多少个线程进行路径分析
+	static int DELAY = 10 * 1000;// 提前接收拓扑的时间，流量接收是时间出发的，从第二周期起，接收到拓扑后的delay秒发送流量请求
 	private Timer timer = null;// 定时器类
 	private Lock configLock = null;// 为configData数据加锁
 	private String protocol = null;// 分析的协议类型‘ospf’ 或 ‘isis’
@@ -55,7 +55,6 @@ public class MainProcesser {
 	private Condition configCondition = null;// 锁相关：设置等待唤醒，相当于wait/notify
 	private RouteAnalyser routeAnalyser = null;// flow路径分析的主要类对象
 	private QueryReceiver queryReceiver = null;// 接收流查询的线程
-	private FileProcesser fileProcesser = null;// 文件处理类对象
 	private ArrayList<Netflow> netflows = null;// flow接收模块分析并聚合后得到的报文对象列表
 	private ConfigReceiver configReceiver = null;// 配置接收类对象
 	private static boolean deviceOpend = true;
@@ -77,7 +76,6 @@ public class MainProcesser {
 		this.configLock = new ReentrantLock();// 初始化锁
 		this.ipStatistics = new IpStatistics();// 统计各类信息线程
 		this.flowReceiver = new FlowReceiver();// flow接收模块实例化
-		this.fileProcesser = new FileProcesser();// 将路径分析结果写入文件的类对象
 		this.routeAnalyser = new RouteAnalyser();// 路径分析类对象初始化
 		this.queryReceiver = new QueryReceiver();// 初始化流查询线程
 		this.topoReceiver = new TopoReceiver(this);// 拓扑接收模块实例化
@@ -111,6 +109,7 @@ public class MainProcesser {
 	 * 主分析函数，每周期执行一次
 	 */
 	public void process() {
+		logger.info("_____________________________________new period start_____________________________________");
 		resetMaterials();// 重置变量
 		this.configData = getConfig();// 从ConfigReceiver对象中获得配置信息对象
 
@@ -128,7 +127,7 @@ public class MainProcesser {
 		}
 
 		if (DELAY != advance * 1000) {
-			DELAY = advance == 0 ? 20 * 1000 : advance * 1000;
+			DELAY = advance == 0 ? 10 * 1000 : advance * 1000;
 		}
 
 		if (PID_INDEX == 1 || !deviceOpend) {// 如果是第一个周期或者硬件段代码没开启成功，再发送开启信号
@@ -253,15 +252,15 @@ public class MainProcesser {
 			logger.warning("no flow got in pid:" + PID);
 			return Constant.FLOW_NOT_RECEIVED;
 		}
-
 		// 开始统计
 		this.ipStatistics.setAS(this.ospfTopo.getAsNumber());
 		this.ipStatistics.setFlows(this.netflows);
 		this.ipStatisticThread = new Thread(this.ipStatistics);
 		this.ipStatisticThread.start();
+
 		// 开始分析flow路径
 		this.routeAnalyser.setNetflows(this.netflows);// 将flow给routeAnalyser
-		this.routeAnalyser.ospfRouteCalculate(PID);// 计算flow路径
+		this.routeAnalyser.ospfRouteCalculate(PID, this.netflows.size());// 计算flow路径
 
 		return Constant.FLOW_ANALYSIS_SUCCESS;
 	}
@@ -272,7 +271,6 @@ public class MainProcesser {
 	 * @return Returns the configData.
 	 */
 	public ConfigData getConfigData() {
-
 		configLock.lock();
 		try {
 			if (this.configData == null) {
@@ -288,7 +286,7 @@ public class MainProcesser {
 	}
 
 	private void reportTopoToGlobal() {
-		String filePath = this.fileProcesser.writeResult(this.mapLidTlink,
+		String filePath = FileProcesser.writeResult(this.mapLidTlink,
 				this.configData.getInterval());
 		// 流量为空 发送全部拓扑给综合分析板卡20130506 modified
 		reportData(filePath);
@@ -299,9 +297,8 @@ public class MainProcesser {
 	}
 
 	private void reportAllStaticsToGlobal() {
-		String filePath = this.fileProcesser.writeResult(this.mapLidTlink,
+		String filePath = FileProcesser.writeResult(this.mapLidTlink,
 				this.ipStatistics.getAllItems(), this.configData.getInterval());// 调用fileProcesser来将得到的路径写入文件中,返回文件路径
-
 		reportData(filePath);
 	}
 
@@ -324,7 +321,6 @@ public class MainProcesser {
 				reportPidToGlobal();
 				return;
 			}
-
 		} else {
 			this.isisTopo = this.topoReceiver.getIsisTopo();// 得到分析后的isis拓扑对象
 
@@ -332,7 +328,6 @@ public class MainProcesser {
 				reportPidToGlobal();
 				return;
 			}
-
 		}
 		reportTopoToGlobal();
 	}
@@ -363,5 +358,4 @@ public class MainProcesser {
 	public String getProtocol() {
 		return protocol;
 	}
-
 }

@@ -36,10 +36,12 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public class FileProcesser {
-	private long pid = 0;
-	private boolean isOuterChanged = true;// 标记本周期bgp信息是否发生改变
-	private boolean isTopoChanged = true;// 标记本周期拓扑是否发生改变
-	private Logger logger = Logger.getLogger(FileProcesser.class.getName());// 注册一个logger
+	private static long pid = 0;
+	private static boolean isTopoChanged = true;// 标记本周期拓扑是否发生改变
+	private static boolean isOuterChanged = true;// 标记本周期bgp信息是否发生改变
+
+	private static Logger logger = Logger.getLogger(FileProcesser.class
+			.getName());// 注册一个logger
 
 	public static ConfigData readConfigData(String filePath) {
 		String topoString = "";
@@ -108,9 +110,9 @@ public class FileProcesser {
 
 	// parameters:
 	// The location of JSON file
-	public OspfTopo readOspfTopo(String filePath) {
-		this.isOuterChanged = true;// 默认bgp信息发生改变
-		this.isTopoChanged = true;// 默认拓扑发生改变
+	public static OspfTopo readOspfTopo(String filePath) {
+		isOuterChanged = true;// 默认bgp信息发生改变
+		isTopoChanged = true;// 默认拓扑发生改变
 
 		String topoString = "";
 		JSONObject jObject = null;
@@ -128,15 +130,14 @@ public class FileProcesser {
 			br.close();
 			jObject = new JSONObject(topoString);
 			// pid
-			this.pid = jObject.getLong("pid");
+			pid = jObject.getLong("pid");
 			OspfTopo topo = null;
 			// 解析开始
 			if (!jObject.has("Topo")) {// 如果拓扑没发生变化——通过判断是否有“topo”key来判断本周期拓扑数据是否发生变化
-				this.isTopoChanged = false;
+				isTopoChanged = false;
 				logger.info("topo not changed ! pid:" + pid);
 			} else {
 				topo = processOspfTopo(jObject.getJSONObject("Topo"));
-
 				// 如果拓扑解析错误，标记拓扑没有改变，用原来的拓扑
 				if (topo == null) {
 					logError("ospf topo process failed!");
@@ -152,7 +153,7 @@ public class FileProcesser {
 			HashMap<Long, AsExternalLSA> mapPrefixLsa5 = null;
 
 			if (!jObject.has("OuterInfo")) {
-				this.isOuterChanged = false;
+				isOuterChanged = false;
 				logger.info("outer info not changed!pid:" + pid);
 			} else {
 				JSONObject outerInfo = jObject.getJSONObject("OuterInfo");
@@ -185,6 +186,7 @@ public class FileProcesser {
 				topo.setMapPrefixBgpItem(mapPrefixBgpItem);
 				topo.setMapPrefixExternalLsa(mapPrefixLsa5);
 			}
+
 			return topo;
 		} catch (IOException e) {
 			logError(e.toString());
@@ -194,9 +196,9 @@ public class FileProcesser {
 		return null;
 	}
 
-	public IsisTopo readIsisTopo(String filePath) {
-		this.isOuterChanged = true;// 默认Reachability信息发生改变
-		this.isTopoChanged = true;// 默认拓扑发生改变
+	public static IsisTopo readIsisTopo(String filePath) {
+		isOuterChanged = true;// 默认Reachability信息发生改变
+		isTopoChanged = true;// 默认拓扑发生改变
 
 		String topoString = "";
 		JSONObject jObject = null;
@@ -213,13 +215,13 @@ public class FileProcesser {
 			br.close();
 			IsisTopo topo = null;
 			jObject = new JSONObject(topoString);
-			this.pid = jObject.getLong("pid");
+			pid = jObject.getLong("pid");
 			int level = jObject.getInt("level");
 			String areaId = jObject.getString("areaId");
 
 			// 解析开始
 			if (!jObject.has("Topo")) {// 如果拓扑没发生变化——通过判断是否有“topo”key来判断本周期拓扑数据是否发生变化
-				this.isTopoChanged = false;
+				isTopoChanged = false;
 				logger.info("isis topo not changed! pid:" + pid);
 			} else {
 				topo = processIsisTopo(jObject.getJSONObject("Topo"));
@@ -235,12 +237,12 @@ public class FileProcesser {
 					return null;
 				}
 				topo.setAreaId(areaId);
-				topo.setPeriodId(this.pid);
+				topo.setPeriodId(pid);
 				topo.setNetworkType(level);
 			}
 
 			if (!jObject.has("reachInfo")) {
-				this.isOuterChanged = false;
+				isOuterChanged = false;
 				logger.info("reachability info not changed!pid:" + pid);
 			} else {
 				JSONObject outerInfo = jObject.getJSONObject("reachInfo");
@@ -270,7 +272,7 @@ public class FileProcesser {
 	 * @param jObject
 	 * @return
 	 */
-	private IsisTopo processIsisTopo(JSONObject topoObject) {
+	private static IsisTopo processIsisTopo(JSONObject topoObject) {
 		long rid = 0;
 		int metric = 0;
 		int linkId = 0;
@@ -356,13 +358,13 @@ public class FileProcesser {
 		return null;
 	}
 
-	private void logError(String msg) {
+	private static void logError(String msg) {
 		logger.warning(msg);
-		this.isTopoChanged = false;
-		this.isOuterChanged = false;
+		isTopoChanged = false;
+		isOuterChanged = false;
 	}
 
-	private OspfTopo processOspfTopo(JSONObject topoObj) {
+	private static OspfTopo processOspfTopo(JSONObject topoObj) {
 		long ip = 0;
 		long rid = 0;
 		int size = 0;
@@ -380,7 +382,7 @@ public class FileProcesser {
 		String interfaceIP = null;
 		OspfTopo topo = new OspfTopo(true);
 		// pid
-		topo.setPeriodId(this.pid);
+		topo.setPeriodId(pid);
 		try {
 			// nodes
 			JSONArray nodes = topoObj.getJSONArray("nodes");
@@ -464,7 +466,6 @@ public class FileProcesser {
 				if (linkId != 0 && routerId != null && interfaceIP != null
 						&& mask != null && nRouterId != null && nAsNumber != 0
 						&& input >= 0) {
-
 					topo.setMapLidTraffic(linkId);// linkId
 					interLink.setLinkId(linkId);
 					// routerId
@@ -503,7 +504,8 @@ public class FileProcesser {
 		return null;
 	}
 
-	private void processReachInfo(IsisTopo topo, JSONObject reachInfo, int level) {
+	private static void processReachInfo(IsisTopo topo, JSONObject reachInfo,
+			int level) {
 		int metric;
 		long sysId;
 		long prefix;
@@ -594,14 +596,14 @@ public class FileProcesser {
 
 	}
 
-	private HashMap<Long, BgpItem> processBgp(JSONArray bgpObj) {
+	private static HashMap<Long, BgpItem> processBgp(JSONArray bgpObj) {
 		int len = 0;
 		int origin = 0;
 		int metric = 0;
 		int weight = 0;
+		int localPreference = 0;
 		String prefix = null;
 		String nextHop = null;
-		int localPreference = 0;
 		long prefixLong = 0l;
 		ArrayList<Integer> asPath = null;
 		BgpItem bgpItem = null;
@@ -673,9 +675,8 @@ public class FileProcesser {
 		return null;
 	}
 
-	private HashMap<Long, AsExternalLSA> processExternalLsa(
+	private static HashMap<Long, AsExternalLSA> processExternalLsa(
 			JSONArray externalLsa) {
-
 		int metric;
 		int externalType;
 		long prefix;
@@ -722,7 +723,7 @@ public class FileProcesser {
 	/*
 	 * 如果两个item宣告了到达同一个prefix 根据各种规则选一个最优的
 	 */
-	private BgpItem chooseBestRoot(BgpItem item1, BgpItem item2) {
+	private static BgpItem chooseBestRoot(BgpItem item1, BgpItem item2) {
 		if (item1.getWeight() != item2.getWeight()) { // weight
 			return (item1.getWeight() > item2.getWeight()) ? item1 : item2;// 越大越好
 		}
@@ -752,10 +753,9 @@ public class FileProcesser {
 		return item1;
 	}
 
-	public String writeResult(HashMap<Integer, TrafficLink> mapLidTlink,
+	public static String writeResult(HashMap<Integer, TrafficLink> mapLidTlink,
 			HashMap<Long, StatisticItem> allStatistics, int interval) {
-
-		String path = "TrafficTopoResult_" + this.pid + ".json";
+		String path = "TrafficTopoResult_" + pid + ".json";
 		int id = 0;
 		FileWriter fw = null;
 		PrintWriter pw = null;
@@ -865,10 +865,10 @@ public class FileProcesser {
 	}
 
 	// 20130506 modified by lili
-	public String writeResult(HashMap<Integer, TrafficLink> mapLidTlink,
+	public static String writeResult(HashMap<Integer, TrafficLink> mapLidTlink,
 			int interval) {
 
-		String path = "TrafficTopoResult_" + this.pid + ".json";
+		String path = "TrafficTopoResult_" + pid + ".json";
 		FileWriter fw = null;
 		PrintWriter pw = null;
 		// 遍历hashmap实例代码：
@@ -937,21 +937,21 @@ public class FileProcesser {
 	/**
 	 * @return Returns the isTopoChanged.
 	 */
-	public boolean isTopoChanged() {
+	public static boolean isTopoChanged() {
 		return isTopoChanged;
 	}
 
 	/**
 	 * @return Returns the isBgpChanged.
 	 */
-	public boolean isOuterInfoChanged() {
+	public static boolean isOuterInfoChanged() {
 		return isOuterChanged;
 	}
 
 	/**
 	 * @return Returns the pid.
 	 */
-	public long getPid() {
+	public static long getPid() {
 		return pid;
 	}
 }

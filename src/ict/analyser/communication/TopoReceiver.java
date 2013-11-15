@@ -55,7 +55,6 @@ public class TopoReceiver extends Thread {
 	private Condition signalCondition = null;// 锁相关：设置等待唤醒，相当于wait/notify
 	private String ospfPath = "ospf_topo.json";// 接收到的文件保存到的路径本地(待定)
 	private String isisPath = "isis_topo.json";// 接收到的文件保存到的路径本地(待定)
-	private FileProcesser fileProcesser = null;// 解析topo文件类
 	private Logger logger = Logger.getLogger(TopoReceiver.class.getName());// 注册一个logger
 
 	public TopoReceiver(MainProcesser processer) {
@@ -63,7 +62,6 @@ public class TopoReceiver extends Thread {
 		this.processer = processer;
 		this.topoLocker = new ReentrantLock();
 		this.signalLocker = new ReentrantLock();
-		this.fileProcesser = new FileProcesser();
 		this.topoCondition = topoLocker.newCondition();
 		this.signalCondition = signalLocker.newCondition();
 
@@ -202,9 +200,9 @@ public class TopoReceiver extends Thread {
 		try {
 			// 调用处理topo文件函数 写在FileProcesser里
 			if (this.protocol.equalsIgnoreCase("ospf")) {
-				OspfTopo newTopo = fileProcesser.readOspfTopo(this.ospfPath);
-				this.isTopoChanged = fileProcesser.isTopoChanged();
-				this.isOuterInfoChanged = fileProcesser.isOuterInfoChanged();
+				OspfTopo newTopo = FileProcesser.readOspfTopo(this.ospfPath);
+				this.isTopoChanged = FileProcesser.isTopoChanged();
+				this.isOuterInfoChanged = FileProcesser.isOuterInfoChanged();
 
 				if (this.isTopoChanged) {// 如果topo改变了
 					if (this.isOuterInfoChanged) {// 如果bgp和LSA5信息变了
@@ -227,7 +225,7 @@ public class TopoReceiver extends Thread {
 					}
 
 				} else {// 如果拓扑没改变，只更改pid和外部信息
-					long pid = fileProcesser.getPid();
+					long pid = FileProcesser.getPid();
 
 					if (pid == 0) {
 						logError("topo is not changed but pid is 0");
@@ -236,7 +234,7 @@ public class TopoReceiver extends Thread {
 
 					this.ospfTopo.setPeriodId(pid);
 
-					if (fileProcesser.isOuterInfoChanged()) {// 如果拓扑没变，外部可达性信息改变了
+					if (FileProcesser.isOuterInfoChanged()) {// 如果拓扑没变，外部可达性信息改变了
 						if (newTopo == null) {
 							logError("topo is changed but no topo data!");
 							return;
@@ -251,9 +249,9 @@ public class TopoReceiver extends Thread {
 					}
 				}
 			} else {// 处理isis情况
-				IsisTopo newTopo = fileProcesser.readIsisTopo(this.isisPath);
-				this.isTopoChanged = fileProcesser.isTopoChanged();
-				this.isOuterInfoChanged = fileProcesser.isOuterInfoChanged();
+				IsisTopo newTopo = FileProcesser.readIsisTopo(this.isisPath);
+				this.isTopoChanged = FileProcesser.isTopoChanged();
+				this.isOuterInfoChanged = FileProcesser.isOuterInfoChanged();
 
 				if (this.isTopoChanged) {// 如果topo改变了
 					if (this.isOuterInfoChanged) {// 如果可达性信息改变
@@ -284,7 +282,7 @@ public class TopoReceiver extends Thread {
 					}
 
 				} else {// 如果拓扑没改变，只更改pid和外部信息
-					long pid = fileProcesser.getPid();
+					long pid = FileProcesser.getPid();
 
 					if (pid == 0) {
 						logError("topo is not changed but pid is 0");
@@ -293,7 +291,7 @@ public class TopoReceiver extends Thread {
 
 					this.isisTopo.setPeriodId(pid);
 
-					if (fileProcesser.isOuterInfoChanged()) {// 如果拓扑没变，外部可达性信息改变了
+					if (FileProcesser.isOuterInfoChanged()) {// 如果拓扑没变，外部可达性信息改变了
 						if (newTopo == null) {
 							logError("topo is changed but no topo data!");
 							return;

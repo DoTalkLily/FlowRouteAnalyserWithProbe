@@ -327,8 +327,8 @@ public class OspfAnalyser implements Runnable {
 		}
 
 		if (srcRouterId == 0) {
-			netflow.printDetail();
-			debug(netflow.getSrcAddr(), 0);
+			// netflow.printDetail();
+			// debug(netflow.getSrcAddr(), 0);
 			return;
 		}
 
@@ -342,8 +342,8 @@ public class OspfAnalyser implements Runnable {
 		}
 
 		if (dstRouterId == 0) {
-			netflow.printDetail();
-			debug(0, netflow.getDstAddr());
+			// netflow.printDetail();
+			// debug(0, netflow.getDstAddr());
 			return;
 		}
 
@@ -354,18 +354,18 @@ public class OspfAnalyser implements Runnable {
 
 		if (srcRouterId == dstRouterId) {// 如果源和目的设备id相同 ,不处理
 			netflow.printDetail();
-			debug(0, 0);
+			// debug(0, 0);
 			return;
 		}
 
 		path = this.processer.getPathByIds(srcRouterId + "_" + dstRouterId);
 
 		if (path == null) { // 打印信息
-			debug(netflow.getSrcAddr(), netflow.getDstAddr());
+			// debug(netflow.getSrcAddr(), netflow.getDstAddr());
 			return;
 		}
 
-		debug(path);
+		// debug(path);
 		// 插入流量
 		insertFlow(netflow, path, type);
 	}
@@ -451,33 +451,33 @@ public class OspfAnalyser implements Runnable {
 			this.flowLock.unlock();
 		}
 	}
-
-	private void debug(Path path) {
-		System.out.println("result path:" + path.getPathInIpFormat());
-		System.out.println("*********************************************\n");
-	}
-
-	private void debug(long srcIp, long dstIp) {
-		if (srcIp != 0 && dstIp != 0) {
-			logger.warning("cannot find path for:"
-					+ IPTranslator.calLongToIp(srcIp) + " "
-					+ IPTranslator.calLongToIp(dstIp));
-		} else {
-			if (srcIp != 0) {
-				logger.warning("cannot find prefix for:"
-						+ IPTranslator.calLongToIp(srcIp));
-				return;
-			}
-			if (dstIp != 0) {
-				logger.warning("cannot find prefix for:"
-						+ IPTranslator.calLongToIp(dstIp));
-				return;
-			}
-
-			logger.warning("src router id is same with dst router id!");
-
-		}
-		System.out
-				.println("***************************************************\n");
-	}
+	//
+	// private void debug(Path path) {
+	// System.out.println("result path:" + path.getPathInIpFormat());
+	// System.out.println("*********************************************\n");
+	// }
+	//
+	// private void debug(long srcIp, long dstIp) {
+	// if (srcIp != 0 && dstIp != 0) {
+	// logger.warning("cannot find path for:"
+	// + IPTranslator.calLongToIp(srcIp) + " "
+	// + IPTranslator.calLongToIp(dstIp));
+	// } else {
+	// if (srcIp != 0) {
+	// logger.warning("cannot find prefix for:"
+	// + IPTranslator.calLongToIp(srcIp));
+	// return;
+	// }
+	// if (dstIp != 0) {
+	// logger.warning("cannot find prefix for:"
+	// + IPTranslator.calLongToIp(dstIp));
+	// return;
+	// }
+	//
+	// logger.warning("src router id is same with dst router id!");
+	//
+	// }
+	// System.out
+	// .println("***************************************************\n");
+	// }
 }
