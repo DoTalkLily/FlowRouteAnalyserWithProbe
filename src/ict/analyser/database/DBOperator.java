@@ -7,6 +7,7 @@
  */
 import ict.analyser.flow.Flow;
 import ict.analyser.netflow.Netflow;
+import ict.analyser.tools.Utils;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -16,8 +17,8 @@ import java.sql.Statement;
 import java.util.ArrayList;
 
 public class DBOperator {
-	public boolean writeFlowToDB(ArrayList<Flow> flows) {
-		String sql = "insert into netflow values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
+	public boolean writeFlowToDB(long pid, ArrayList<Flow> flows) {
+		String sql = "insert into netflow values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
 
 		Connection conn = DBUtils.getConnection();// 从线程池中获得一个连接
 
@@ -27,39 +28,42 @@ public class DBOperator {
 				Flow oneFlow = null;
 				Netflow netflow = null;
 
-				System.out.println("数据库连接成功");
+				// System.out.println("数据库连接成功");
 				// 数据库连接成功，开始存入NetFlow数据
 				PreparedStatement pstmt = conn.prepareStatement(sql);
 
 				int counter = 0;
+				int hourFrom2013 = Utils.pid2HourOfYear(pid);
 
 				for (int i = 0; i < size; i++) {
 					oneFlow = flows.get(i);
 					netflow = oneFlow.getNetflow();
 
 					if (netflow != null) {
-						pstmt.setLong(1, oneFlow.getPid());
+						pstmt.setLong(1, pid);
 						pstmt.setLong(2, netflow.getSrcAddr());
 						pstmt.setLong(3, netflow.getDstAddr());
-						pstmt.setLong(4, netflow.getSrcRouter());
-						pstmt.setLong(5, netflow.getDstRouter());
-						pstmt.setInt(6, netflow.getSrcPort());
-						pstmt.setInt(7, netflow.getDstPort());
-						pstmt.setByte(8, netflow.getProtocol());
-						pstmt.setLong(9, netflow.getdOctets());
-						pstmt.setInt(10, netflow.getSrcAs());
-						pstmt.setInt(11, netflow.getDstAs());
-						pstmt.setLong(12, netflow.getSrcPrefix());
-						pstmt.setLong(13, netflow.getDstPrefix());
-						pstmt.setInt(14, netflow.getInput());
-						pstmt.setInt(15, netflow.getOutput());
-						pstmt.setInt(16, netflow.getTos());
-						pstmt.setString(17, oneFlow.getPath()
+						pstmt.setByte(4, netflow.getSrcMask());
+						pstmt.setByte(5, netflow.getDstMask());
+						pstmt.setLong(6, netflow.getSrcRouter());
+						pstmt.setLong(7, netflow.getDstRouter());
+						pstmt.setInt(8, netflow.getSrcPort());
+						pstmt.setInt(9, netflow.getDstPort());
+						pstmt.setLong(10, netflow.getdOctets());
+						pstmt.setInt(11, netflow.getSrcAs());
+						pstmt.setInt(12, netflow.getDstAs());
+						pstmt.setLong(13, netflow.getSrcPrefix());
+						pstmt.setLong(14, netflow.getDstPrefix());
+						pstmt.setInt(15, netflow.getInput());
+						pstmt.setInt(16, netflow.getOutput());
+						pstmt.setInt(17, netflow.getTos());
+						pstmt.setString(18, oneFlow.getPath()
 								.getPathInIpFormat());
-						pstmt.setLong(18, netflow.getFirst());
-						pstmt.setLong(19, netflow.getLast());
-						pstmt.setShort(20, netflow.getProc());
-
+						pstmt.setLong(19, netflow.getFirst());
+						pstmt.setLong(20, netflow.getLast());
+						pstmt.setShort(21, netflow.getProc());
+						pstmt.setLong(22, netflow.getRouterIP());
+						pstmt.setInt(23, hourFrom2013);
 						conn.setAutoCommit(false);// 重要！不然自动提交
 						pstmt.addBatch();// 用PreparedStatement的批量处理
 						counter++;
@@ -93,7 +97,8 @@ public class DBOperator {
 		}
 
 		Connection conn = DBUtils.getConnection();// 从线程池中获得一个连接
-
+		if (conn == null)
+			System.out.println("conn is null!!!");
 		try {
 			if (!conn.isClosed()) {
 				Statement statement = conn.createStatement();

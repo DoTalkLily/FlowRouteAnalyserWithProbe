@@ -13,19 +13,12 @@ package ict.analyser.ospftopo;
  * @version 1.0, 2012-10-18
  */
 public class Link {
-
-	private int linkId = 0;// 标识链路的id
-
-	private int metric = 0;// 链路上的 cost值
-
-	private String area = null;// 本链路所属area，也可理解为本接口所属area
-
 	private long myId = 0;// 本设备id
-
 	private long mask = 0;
-
+	private int linkId = 0;// 标识链路的id
+	private int metric = 0;// 链路上的 cost值
+	private String area = null;// 本链路所属area，也可理解为本接口所属area
 	private long neighborId = 0;// 邻居设备id
-
 	private long myInterIp = 0;// 本设备接口ip
 
 	/**

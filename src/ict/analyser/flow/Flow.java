@@ -15,13 +15,11 @@ import ict.analyser.netflow.Netflow;
  * @version 1.0, 2012-10-23
  */
 public class Flow {
-	private long pid = 0;// 计算周期
 	private int direction = 0;
 	private Path path = null;// 路径
 	private Netflow netflow = null;// flow中包含的netflow对象
 
-	public Flow(long pid, Netflow netflow, Path path, int direction) {
-		this.pid = pid;
+	public Flow(Netflow netflow, Path path, int direction) {
 		this.path = path;
 		this.netflow = netflow;
 		this.direction = direction;
@@ -70,20 +68,5 @@ public class Flow {
 		}
 
 		return false;
-	}
-
-	/**
-	 * @return Returns the pid.
-	 */
-	public long getPid() {
-		return pid;
-	}
-
-	/**
-	 * @param pid
-	 *            The pid to set.
-	 */
-	public void setPid(long pid) {
-		this.pid = pid;
 	}
 }

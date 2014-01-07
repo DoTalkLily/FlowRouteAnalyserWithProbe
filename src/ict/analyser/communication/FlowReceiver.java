@@ -128,7 +128,7 @@ public class FlowReceiver extends TimerTask {
 				read = 0;
 			}
 
-			logger.info("流量接收了" + (passedlen * 100) / WHOLE_BYTES + "%");
+			// logger.info("流量接收了" + (passedlen * 100) / WHOLE_BYTES + "%");
 		} catch (IOException e) {// 如果数据发送过程错误中断，抛弃本周期数据
 			WHOLE_BYTES = 0;
 			e.printStackTrace();
@@ -151,14 +151,25 @@ public class FlowReceiver extends TimerTask {
 
 		logger.info("processFlow....");
 
-		ArrayList<FlowProcesser> pros = new ArrayList<FlowProcesser>();
-		FlowProcesser pro = null;
+		processFlowInPlace();// 不使用多线程处理
+
+		lock.lock();
+		try {
+			PROCESS_FLOW_FINISHED = true;
+			condition.signalAll();
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public void processFlowWithMultiThread() {
+		ArrayList<Thread> pros = new ArrayList<Thread>();
+		Thread pro = null;
 
 		for (int i = 0; i < ANALYSER_COUNT; i++) {
-			pro = new FlowProcesser(this);
+			pro = new Thread(new FlowProcesser(this));
 			pros.add(pro);
 			pro.start();
-			// 起5个线程开始分析，这里将来可以考虑用线程池
 		}
 
 		for (int i = 0; i < ANALYSER_COUNT; i++) {
@@ -168,13 +179,22 @@ public class FlowReceiver extends TimerTask {
 				e.printStackTrace();
 			}
 		}
+	}
 
-		lock.lock();
-		try {
-			PROCESS_FLOW_FINISHED = true;
-			condition.signalAll();
-		} finally {
-			lock.unlock();
+	// 不使用多线程处理flow版本
+	public void processFlowInPlace() {
+		byte[] oneFlow = new byte[FLOW_SIZE + 1];
+		Netflow flow = null;
+
+		while ((INDEX + FLOW_SIZE) <= WHOLE_BYTES) {
+			System.arraycopy(this.allBytes, INDEX, oneFlow, 0, FLOW_SIZE);
+			flow = new Netflow(oneFlow);// 得到一条flow对象
+
+			if (flow != null) {
+				this.allFlows.add(flow);
+				COUNTER++;
+			}
+			INDEX += FLOW_SIZE;
 		}
 	}
 

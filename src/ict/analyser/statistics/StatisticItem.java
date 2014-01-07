@@ -6,7 +6,9 @@
  */
 package ict.analyser.statistics;
 
-import java.util.ArrayList;
+import ict.analyser.analysis.MainProcesser;
+import ict.analyser.config.ConfigData;
+
 import java.util.HashMap;
 
 /**
@@ -16,25 +18,19 @@ import java.util.HashMap;
  * @version 1.0, 2013-3-5
  */
 public class StatisticItem {
-
 	private long ip = 0; // long型表示的ip
-
 	private int online = 0;// ip在一个周期内的在线时长，这里暂定以ms为单位
-
 	private long inFlow = 0; // ip在一个周期内对应的入流量大小，以Byte为单位
-
-	private long outFlow = 0;// // ip在一个周期内对应的出流量大小，以Byte为单位
-
 	private long prefix = 0; // long型ip所属前缀
-
-	private ArrayList<long[]> times = null;// 用于统计在线时间段
-
+	private long outFlow = 0;// // ip在一个周期内对应的出流量大小，以Byte为单位
+	// private ArrayList<long[]> times = null;// 用于统计在线时间段
+	// private ArrayList<long[]> test = new ArrayList<long[]>();
 	private HashMap<String, Long> mapInFlow = null;// 入ip流量细化
-
 	private HashMap<String, Long> mapOutFlow = null;// 出ip流量细化
+	private static int INTERVAL = MainProcesser.getInterval();
 
 	public StatisticItem() {
-		times = new ArrayList<long[]>();
+		// times = new ArrayList<long[]>();
 		mapInFlow = new HashMap<String, Long>();
 		mapOutFlow = new HashMap<String, Long>();
 	}
@@ -58,96 +54,103 @@ public class StatisticItem {
 	 * @return Returns the online.
 	 */
 	public int getOnline() {
+		// aggregate();
+		// getTotal();
 
-		aggregate();
-		getTotal();
-
+		// if (this.online < 0 || this.online > Integer.MAX_VALUE) {
+		// System.out.println("ip online time is out of range!!!!! "
+		// + this.online + "  ");
+		// for (long[] l : test) {
+		// System.out.print(l[0] + ":" + l[1] + ",");
+		// }
+		//
+		// System.out.println();
+		// this.online = MAX_ONLINE_TIME;
+		// }
 		return this.online;
 	}
 
-	public void getTotal() {
-		int size = this.times.size();
+	// public void getTotal() {
+	// int size = this.times.size();
+	//
+	// if (size == 0) {
+	// return;
+	// }
+	//
+	// long[] t = this.times.get(0);
+	// long total = t[1] - t[0];
+	// long oldLast = t[1];
+	// long interval = 0;
+	//
+	// for (int i = 1; i < size; i++) {
+	// t = this.times.get(i);
+	// interval = t[0] - oldLast;
+	//
+	// if (interval > 0 && interval < 15 * 1000) {
+	// total += t[1] - oldLast;
+	// } else if (interval > 15 * 1000) {
+	// total += 5 * 1000 + t[1] - t[0];
+	// }
+	// oldLast = t[1];// 标记last为当前时间段的last
+	// }
+	// this.online = (int) total;
+	// }
+	//
+	// private void aggregate() {
+	// int size = this.times.size();
+	//
+	// if (size <= 1) {
+	// return;
+	// }
+	//
+	// long[] t = this.times.get(0);
+	// long oldFirst = t[0], oldLast = t[1];
+	// ArrayList<long[]> result = new ArrayList<long[]>();
+	//
+	// for (int i = 1; i < size; i++) {
+	// t = this.times.get(i);
+	//
+	// if (t[0] >= oldFirst && t[0] <= oldLast) {
+	// oldLast = Math.max(oldLast, t[1]);
+	// } else {
+	// long[] temp = { oldFirst, oldLast };
+	// result.add(temp);
+	// oldFirst = t[0];
+	// oldLast = t[1];
+	// }
+	// }
+	//
+	// long[] temp = { oldFirst, oldLast };
+	// result.add(temp);
+	// this.times = result;
+	// }
 
-		if (size == 0) {
-			return;
-		}
-
-		long[] t = this.times.get(0);
-		long total = t[1] - t[0];
-		long oldLast = t[1];
-		long interval = 0;
-
-		for (int i = 1; i < size; i++) {
-			t = this.times.get(i);
-			interval = t[0] - oldLast;
-
-			if (interval > 0 && interval < 15 * 1000) {
-				total += t[1] - oldLast;
-			} else if (interval > 15 * 1000) {
-				total += 5 * 1000 + t[1] - t[0];
-			}
-			oldLast = t[1];// 标记last为当前时间段的last
-		}
-		this.online = (int) total;
-	}
-
-	private void aggregate() {
-		int size = this.times.size();
-
-		if (size <= 1) {
-			return;
-		}
-
-		long[] t = this.times.get(0);
-		long oldFirst = t[0], oldLast = t[1];
-		ArrayList<long[]> result = new ArrayList<long[]>();
-
-		for (int i = 1; i < size; i++) {
-			t = this.times.get(i);
-
-			if (t[0] > oldFirst && t[0] <= oldLast) {
-				if (t[1] > oldLast) {
-					oldLast = t[1];
-				}
-			} else {
-				long[] temp = { oldFirst, oldLast };
-				result.add(temp);
-				oldFirst = t[0];
-				oldLast = t[1];
-			}
-		}
-
-		long[] temp = { oldFirst, oldLast };
-		result.add(temp);
-		this.times = result;
-	}
-
-	/**
-	 * 
-	 * 比较两个时间段是否有交集
-	 * 
-	 * @param a
-	 *            已缓存的时间段
-	 * @param b
-	 *            待比较的时间段
-	 * @return 相交 ——1 内含——2 外含——3 相离——4
-	 */
-	public int isIntersect(long[] a, long[] b) {
-
-		if (b[0] >= a[0] && b[0] <= a[1]) {
-			return b[1] > a[1] ? 1 : 2;
-		} else if (b[0] < a[0]) {
-			if (b[1] < a[0]) {
-				return 4;
-			} else if (b[1] < a[1]) {
-				return 1;
-			} else {// (b[1] > a[1])
-				return 3;
-			}
-		} else {// b[0] > a[1]
-			return 4;
-		}
-	}
+	// /**
+	// *
+	// * 比较两个时间段是否有交集
+	// *
+	// * @param a
+	// * 已缓存的时间段
+	// * @param b
+	// * 待比较的时间段
+	// * @return 相交 ——1 内含——2 外含——3 相离——4
+	// */
+	// public int isIntersect(long[] a, long[] b) {
+	//
+	// if (b[0] >= a[0] && b[0] <= a[1]) {
+	// return b[1] > a[1] ? 1 : 2;
+	// } else if (b[0] < a[0]) {
+	// if (b[1] < a[0]) {
+	// return 4;
+	// } else if (b[1] < a[1]) {
+	// return 1;
+	// } else {// (b[1] > a[1])
+	// return 3;
+	// }
+	// } else {// b[0] > a[1]
+	// return 4;
+	// }
+	// }
 
 	/**
 	 * @return Returns the prefix.
@@ -207,19 +210,7 @@ public class StatisticItem {
 	 *            是否是入流量 true——是 false——出
 	 */
 	private void addFlowDetail(long bytes, int port, boolean isIn) {
-		switch (port) {
-		case 21:
-			addFlowToMap("ftp", bytes, isIn);
-			break;
-		case 23:
-			addFlowToMap("telnet", bytes, isIn);
-			break;
-		case 80:
-			addFlowToMap("http", bytes, isIn);
-			break;
-		default:
-			addFlowToMap("other", bytes, isIn);
-		}
+		addFlowToMap(ConfigData.getProtocalByPort(port), bytes, isIn);// 根据端口号判断协议类型进行相应统计
 	}
 
 	private void addFlowToMap(String protocal, long bytes, boolean isIn) {
@@ -250,8 +241,8 @@ public class StatisticItem {
 
 	}
 
-	public void setOnline(int time) {
-		this.online = time;
+	public void setOnline() {
+		this.online = INTERVAL;
 	}
 
 	/**
@@ -288,39 +279,41 @@ public class StatisticItem {
 		}
 	}
 
-	/**
-	 * @param times
-	 *            The times to set.
-	 */
-	public void setTimes(long first, long last) {
-
-		if (first < 0 || last < 0) {
-			return;
-		}
-
-		int size = this.times.size();
-		long[] t = { first, last };
-		long[] saved = null;
-
-		if (size == 0) {
-			this.times.add(t);
-			return;
-		}
-
-		int i;
-
-		for (i = 0; i < size; i++) {
-			saved = this.times.get(i);
-
-			if (first <= saved[0]) {
-				size++;
-				this.times.add(i, t);
-				break;
-			}
-		}
-
-		if (i == size) {// 如果first大于已经缓存的任意时间段的first，加到数组最后
-			this.times.add(size, t);
-		}
-	}
+	// /**
+	// * @param times
+	// * The times to set.
+	// */
+	// public void setTimes(long first, long last) {
+	//
+	// if (first < 0 || last < 0) {
+	// return;
+	// }
+	//
+	// int size = this.times.size();
+	// long[] t = { first, last };
+	// long[] saved = null;
+	//
+	// if (size == 0) {
+	// this.times.add(t);
+	// this.test.add(t);
+	// return;
+	// }
+	//
+	// int i;
+	//
+	// for (i = 0; i < size; i++) {
+	// saved = this.times.get(i);
+	//
+	// if (first <= saved[0]) {
+	// this.times.add(i, t);
+	// this.test.add(t);
+	// break;
+	// }
+	// }
+	//
+	// if (i == size) {// 如果first大于已经缓存的任意时间段的first，加到数组最后
+	// this.times.add(t);
+	// this.test.add(t);
+	// }
+	// }
 }

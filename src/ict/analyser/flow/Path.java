@@ -89,6 +89,7 @@ public class Path {
 			for (int i = 1; i < size; i++) {
 				link = this.links.get(i);
 				neighborId = IPTranslator.calLongToIp(link.getNeighborId());
+
 				if (neighborId != null) {
 					routerIds += "|" + neighborId;
 				}

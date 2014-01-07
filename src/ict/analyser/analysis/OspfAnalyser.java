@@ -78,7 +78,7 @@ public class OspfAnalyser implements Runnable {
 	@Override
 	public void run() {
 		if (isPreCal) {// 如果是topo提前计算
-			logger.info("prefre calculating");
+			// logger.info("prefre calculating");
 			calTopoRoute();
 			logger.info("prefre calculating done!");
 		} else { // 否则是计算flow路径
@@ -124,17 +124,18 @@ public class OspfAnalyser implements Runnable {
 																// 或者都等于拓扑文件中的as则为域内流量
 				// 如果源和目的设备所在的as号和当前as号相同，是域内flow
 				flowDirection = Constant.INTERNAL_FLOW;// 标记为inbound
-
+				netflow.setSrcAs(this.topo.getAsNumber());
+				netflow.setDstAs(this.topo.getAsNumber());
 			} else if ((srcAS == topoAS && dstAS != topoAS)
 					|| (srcAS == 0 && dstAS != 0)) {// outboundflow
 
 				flowDirection = Constant.OUTBOUND_FLOW;
-
+				netflow.setSrcAs(this.topo.getAsNumber());
 			} else if ((srcAS != topoAS && dstAS == topoAS)
 					|| (srcAS != 0 && dstAS == 0)) {// inboundflow
 
 				flowDirection = Constant.INBOUND_FLOW;
-
+				netflow.setDstAs(this.topo.getAsNumber());
 			} else {// transitflow
 				flowDirection = Constant.TRANSIT_FLOW;
 			}
@@ -165,7 +166,7 @@ public class OspfAnalyser implements Runnable {
 	 */
 	private void writeToDB() {
 		this.flowLock.lock();
-		this.dbWriter.writeFlowToDB(this.allFlowRoute);
+		this.dbWriter.writeFlowToDB(this.period, this.allFlowRoute);
 		this.flowLock.unlock();
 		logger.info("write to db done!");
 	}
@@ -293,7 +294,7 @@ public class OspfAnalyser implements Runnable {
 			linkId = link.getLinkId();
 			setMapLidTraffic(linkId, bytes, netflow.getDstPort());
 		}
-		Flow flow = new Flow(this.period, netflow, path, direction);
+		Flow flow = new Flow(netflow, path, direction);
 		this.allFlowRoute.add(flow);
 	}
 
@@ -321,7 +322,6 @@ public class OspfAnalyser implements Runnable {
 
 		if (type == Constant.INTERNAL_FLOW || type == Constant.OUTBOUND_FLOW) {
 			srcRouterId = getRId(netflow.getSrcAddr(), netflow.getSrcMask());
-
 		} else {
 			srcRouterId = getAsbrIdByRouterIp(netflow.getRouterIP());
 		}
@@ -353,7 +353,7 @@ public class OspfAnalyser implements Runnable {
 		Path path;
 
 		if (srcRouterId == dstRouterId) {// 如果源和目的设备id相同 ,不处理
-			netflow.printDetail();
+			// netflow.printDetail();
 			// debug(0, 0);
 			return;
 		}
@@ -417,6 +417,7 @@ public class OspfAnalyser implements Runnable {
 	public void sendCompleteSignal() {
 		this.completeLock.lock();
 		try {
+			System.out.println("complete signal wake up....");
 			this.completed = true;
 			this.completeCon.signal();
 		} finally {
@@ -425,11 +426,13 @@ public class OspfAnalyser implements Runnable {
 	}
 
 	public void completedSignal() {
-		completeLock.lock();
+		this.completeLock.lock();
 		try {
-			while (!this.completed) {
+			if (!this.completed) {
+				System.out.println("complete signal waiting....");
 				this.completeCon.await();
 			}
+			System.out.println("complete signal return....");
 			this.completed = false;
 		} catch (InterruptedException e) {
 			e.printStackTrace();

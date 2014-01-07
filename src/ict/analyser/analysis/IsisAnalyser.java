@@ -449,7 +449,7 @@ public class IsisAnalyser implements Runnable {
 			linkId = link.getLinkId();
 			setMapLidTraffic(linkId, netflow.getdOctets(), netflow.getDstPort());
 		}
-		Flow flow = new Flow(this.period, netflow, path, direction);
+		Flow flow = new Flow(netflow, path, direction);
 		this.allFlowRoute.add(flow);
 	}
 
@@ -507,7 +507,7 @@ public class IsisAnalyser implements Runnable {
 
 	private void writeToDB() {
 		this.flowLock.lock();
-		this.dbWriter.writeFlowToDB(this.allFlowRoute);
+		this.dbWriter.writeFlowToDB(this.period, this.allFlowRoute);
 		this.flowLock.unlock();
 		System.out.println("wrote to db done!!");
 	}

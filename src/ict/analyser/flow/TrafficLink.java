@@ -18,7 +18,7 @@ import java.util.Map.Entry;
  */
 public class TrafficLink {
 	private int linkId = 0;// 链路id
-	private int totalBytes = 0;// 链路总流量
+	private long totalBytes = 0;// 链路总流量
 	private HashMap<String, Long> mapProtocalBytes;
 
 	public TrafficLink(int linkId) {
@@ -50,6 +50,7 @@ public class TrafficLink {
 			bytes = entry.getValue();
 			protocal = entry.getKey();
 
+			this.totalBytes += bytes;// 累加总流量
 			this.mapProtocalBytes.put(protocal,
 					this.mapProtocalBytes.get(protocal) + bytes);
 		}

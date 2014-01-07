@@ -19,11 +19,12 @@ import java.util.logging.Logger;
  * @version 1.0, 2012-10-18
  */
 public class OspfTopo {
-	private long periodId = 0;// 周期id，标记当前是第几周期
 	private int asNumber = 0;// 拓扑所在AS号
+	private long periodId = 0;// 周期id，标记当前是第几周期
 	private ArrayList<Long> asbrIds = null;// 保存全部边界路由器id
 	private ArrayList<Integer> linkIds = null;// 保存全部链路id的数组
 	private ArrayList<Long> allRouterIds = null;// 保存全网路由器id列表
+	private ArrayList<Long> neighborAsIps = null;// 邻居as边界路由器ip地址用在统计分析模块如果srcip或者dstip是来自这些ip那netflow报文中as号也是0
 	private HashMap<Long, Long> mapIpRouterid = null;// 保存本AS内路由器ip——id映射
 	private HashMap<Long, OspfRouter> mapRidAsbr = null;// 拓扑中边界路由器id——路由器对象映射
 	private HashMap<Long, Long> mapPrefixRouterId = null;// topo文件中stubs对应的
@@ -387,7 +388,20 @@ public class OspfTopo {
 	public void setInterAsLinks(long nexthop, InterAsLink interLink) {
 		if (nexthop != 0 && interLink != null) {
 			this.mapNextHopAsLink.put(nexthop, interLink);
+
+			if (this.neighborAsIps == null) {
+				this.neighborAsIps = new ArrayList<Long>();
+			}
+			this.neighborAsIps.add(nexthop);
 		}
 
 	}
+
+	/**
+	 * @return Returns the neighborAsIps.
+	 */
+	public ArrayList<Long> getNeighborAsIps() {
+		return neighborAsIps;
+	}
+
 }

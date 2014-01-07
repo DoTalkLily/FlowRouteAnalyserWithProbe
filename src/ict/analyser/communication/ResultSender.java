@@ -31,8 +31,9 @@ public class ResultSender implements Runnable {
 	private static int tryCount = 1;// 如果连接失败，或者读数据失败，尝试重连接的次数
 	private static int tryInterval = 3 * 1000;// 两次尝试重连的时间间隔，单位： 秒
 
-	public ResultSender(int port, String ip, String filePath) {// 初始化时顺便赋值
+	public ResultSender(long pid, int port, String ip, String filePath) {// 初始化时顺便赋值
 		this.ip = ip;
+		this.pid = pid;
 		this.port = port;
 		this.filePath = filePath;
 	}
@@ -62,9 +63,9 @@ public class ResultSender implements Runnable {
 				tryCount = 1;
 			}
 			return;
+		} finally {
+			closeConnect();// 关闭连接
 		}
-
-		closeConnect();// 关闭连接
 	}
 
 	private void openConnect() throws IOException {
@@ -113,8 +114,7 @@ public class ResultSender implements Runnable {
 				os.flush();
 			}
 		} else {
-			os.writeBytes(pid + "");
-			System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!pid:" + pid);
+			os.writeBytes(pid + "");// 这里当第一个周期拓扑文件为空，只上报pid给综合分析，当然：pid也有可能为空
 			os.flush();
 		}
 	}
@@ -137,9 +137,4 @@ public class ResultSender implements Runnable {
 			e.printStackTrace();
 		}
 	}
-
-	public void setPid(long pid) {
-		this.pid = pid;
-	}
-
 }

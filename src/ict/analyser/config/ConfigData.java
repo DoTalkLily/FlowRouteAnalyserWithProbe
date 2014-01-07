@@ -12,6 +12,7 @@
  */
 package ict.analyser.config;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map.Entry;
@@ -29,7 +30,7 @@ public class ConfigData {
 	private int globalAnalysisPort = 0;// 综合分析接收结果的端口号
 	private String protocol = "ospf";// 协议类型
 	private String globalAnalysisIP = null;// 综合分析接收结果的ip
-	private HashMap<Integer, String> mapPortProtocal = null;// 端口号——协议名映射，虽然这种存储方式可能多存重复协议名字，但是方便端口号查协议名的查找，这里元素数量非常少
+	private static HashMap<Integer, String> mapPortProtocal = null;// 端口号——协议名映射，虽然这种存储方式可能多存重复协议名字，但是方便端口号查协议名的查找，这里元素数量非常少
 
 	/**
 	 * @return Returns the mapPortProtocal.
@@ -42,8 +43,8 @@ public class ConfigData {
 	 * @param mapPortProtocal
 	 *            The mapPortProtocal to set.
 	 */
-	public void setMapPortProtocal(HashMap<Integer, String> mapPortProtocal) {
-		this.mapPortProtocal = mapPortProtocal;
+	public void setMapPortProtocal(HashMap<Integer, String> map) {
+		mapPortProtocal = map;
 	}
 
 	/**
@@ -153,7 +154,7 @@ public class ConfigData {
 
 	// for test
 	public void printDetail() {
-		if (this.mapPortProtocal == null) {
+		if (mapPortProtocal == null) {
 			System.out.println("no config data!");
 			return;
 		}
@@ -165,8 +166,8 @@ public class ConfigData {
 				+ " protocal:" + this.protocol);
 
 		Entry<Integer, String> entry;
-		Iterator<Entry<Integer, String>> iterator = this.mapPortProtocal
-				.entrySet().iterator();
+		Iterator<Entry<Integer, String>> iterator = mapPortProtocal.entrySet()
+				.iterator();
 
 		while (iterator.hasNext()) {
 			entry = iterator.next();
@@ -174,4 +175,60 @@ public class ConfigData {
 					+ entry.getValue());
 		}
 	}
+
+	public static String getProtocalByPort(int port) {
+		if (port < 0) {
+			System.out
+					.println("params is wrong in ConfigData:getProtocalByPort "
+							+ port);
+			return null;
+		}
+
+		if (mapPortProtocal == null || mapPortProtocal.size() == 0) {// 在比较极端的情况，比如配置文件中端口———协议名为空字段时启用原始判断
+			switch (port) {
+			case 21:
+				return "ftp";
+			case 23:
+				return "telnet";
+			case 80:
+				return "http";
+			default:
+				return "other";
+			}
+		}
+
+		if (mapPortProtocal.containsKey(port)) {
+			return mapPortProtocal.get(port);
+		}
+
+		return "other";
+	}
+
+	public static ArrayList<Integer> getPortStrByProtocal(String protocal) {
+		if (protocal == null) {
+			return null;
+		}
+
+		if (mapPortProtocal == null || mapPortProtocal.size() == 0) {
+			return null;
+		}
+
+		boolean isOther = "other".equals(protocal) ? true : false;
+
+		Entry<Integer, String> entry = null;
+		ArrayList<Integer> ports = new ArrayList<Integer>();
+		Iterator<Entry<Integer, String>> iterator = mapPortProtocal.entrySet()
+				.iterator();
+
+		while (iterator.hasNext()) {
+			entry = iterator.next();
+			if (isOther) {
+				ports.add(entry.getKey());
+			} else if (protocal.equals(entry.getValue())) {
+				ports.add(entry.getKey());
+			}
+		}
+		return ports;
+	}
+
 }

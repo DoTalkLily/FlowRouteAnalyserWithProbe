@@ -38,7 +38,7 @@ public class MainProcesser {
 	static long PID = 0; // 当前所处的周期标识
 	static int TOPN = 50;// topN
 	static int PID_INDEX = 1;// 周期索引
-	static int INTERVAL = 15;// 配置文件中获得的计算周期单位:min
+	static int INTERVAL = 10;// 配置文件中获得的计算周期单位:min
 	static int DIVIDE_COUNT = 5;// 将所有的netflow报文分成多少份，决定生成多少个线程进行路径分析
 	static int DELAY = 10 * 1000;// 提前接收拓扑的时间，流量接收是时间出发的，从第二周期起，接收到拓扑后的delay秒发送流量请求
 	private Timer timer = null;// 定时器类
@@ -109,7 +109,6 @@ public class MainProcesser {
 	 * 主分析函数，每周期执行一次
 	 */
 	public void process() {
-		logger.info("_____________________________________new period start_____________________________________");
 		resetMaterials();// 重置变量
 		this.configData = getConfig();// 从ConfigReceiver对象中获得配置信息对象
 
@@ -139,7 +138,6 @@ public class MainProcesser {
 			return;
 		}
 
-		this.topoReceiver.getTopoSignal();// 开始接收拓扑的信号
 		int newInterval = this.configData.getInterval();// 以分钟为单位，得到分析周期
 
 		if (newInterval != INTERVAL) {// 捕获计算时间间隔的改变
@@ -147,20 +145,24 @@ public class MainProcesser {
 			INTERVAL = newInterval;
 		}
 
+		this.routeAnalyser.setMapPortProtocal(this.configData
+				.getMapPortProtocal()); // 将端口号——协议名映射赋值给分析线程
+
+		this.topoReceiver.getTopoSignal();// 开始接收拓扑的信号
+
 		this.flowReceiver = null;// 显式释放对象 这里让第一个周期和之后的周期处理方式相同，都要预先计算路径再铺流量
 		this.flowReceiver = new FlowReceiver();// 不能重复schedule同一个对象，所以每周期都新建一个对象，这里用周期执行是不可靠的，由于周期可能会变化
 		this.timer.schedule(flowReceiver, DELAY);
 
 		int message = -1;
 
-		this.routeAnalyser.setMapPortProtocal(this.configData
-				.getMapPortProtocal()); // 将端口号——协议名映射赋值给分析线程
-
 		if (this.protocol.equalsIgnoreCase("ospf")) {
 			message = ospfProcess();
 		} else {
 			message = isisProcess();
 		}
+
+		System.out.println("ospf process done...");
 
 		if (message == Constant.TOPO_NOT_RECEIVED) {// 如果拓扑错误，只发送pid给综合分析
 			PID_INDEX++;
@@ -202,7 +204,7 @@ public class MainProcesser {
 			return Constant.TOPO_NOT_RECEIVED;
 		}
 
-		PID = this.isisTopo.getPeriodId();
+		// PID = this.isisTopo.getPeriodId();
 		this.routeAnalyser.setTopo(this.isisTopo);// 设置新的拓扑对象给分析线程
 
 		if (PID_INDEX == 1) { // 第一个周期提前计算路径
@@ -237,7 +239,7 @@ public class MainProcesser {
 			return Constant.TOPO_NOT_RECEIVED;
 		}
 
-		PID = this.ospfTopo.getPeriodId();// 获得周期
+		// PID = this.ospfTopo.getPeriodId();// 获得周期
 		this.routeAnalyser.setTopo(this.ospfTopo);// 拓扑对象给分析线程
 
 		if (PID_INDEX == 1) { // 第一个周期提前计算路径
@@ -253,14 +255,15 @@ public class MainProcesser {
 			return Constant.FLOW_NOT_RECEIVED;
 		}
 		// 开始统计
-		this.ipStatistics.setAS(this.ospfTopo.getAsNumber());
 		this.ipStatistics.setFlows(this.netflows);
+		this.ipStatistics.setAS(this.ospfTopo.getAsNumber());
+		this.ipStatistics.setNeighborAsIps(this.ospfTopo.getNeighborAsIps());
 		this.ipStatisticThread = new Thread(this.ipStatistics);
 		this.ipStatisticThread.start();
 
 		// 开始分析flow路径
 		this.routeAnalyser.setNetflows(this.netflows);// 将flow给routeAnalyser
-		this.routeAnalyser.ospfRouteCalculate(PID, this.netflows.size());// 计算flow路径
+		this.routeAnalyser.ospfRouteCalculate(PID, this.netflows.size());// 注意*100原因是数据库中要存储datetime类型，但是pid约定只能精确到分钟，因此这里后面补充秒的占位，计算flow路径
 
 		return Constant.FLOW_ANALYSIS_SUCCESS;
 	}
@@ -304,7 +307,7 @@ public class MainProcesser {
 
 	public void reportData(String filePath) {
 		if (this.configData != null) {
-			this.resultSender = new ResultSender(
+			this.resultSender = new ResultSender(PID,
 					this.configData.getGlobalAnalysisPort(),
 					this.configData.getGlobalAnalysisIP(), filePath);
 			new Thread(resultSender).start();// 发送给综合分析板卡
@@ -357,5 +360,17 @@ public class MainProcesser {
 	 */
 	public String getProtocol() {
 		return protocol;
+	}
+
+	public int getPidIndex() {
+		return PID_INDEX;
+	}
+
+	public static int getInterval() {
+		return INTERVAL;
+	}
+
+	public void setPid(long pid) {
+		PID = pid;
 	}
 }

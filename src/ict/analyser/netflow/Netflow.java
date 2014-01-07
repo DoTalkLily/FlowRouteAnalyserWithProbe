@@ -56,7 +56,6 @@ import ict.analyser.tools.Utils;
  */
 
 public class Netflow {
-
 	long routerIP = 0;
 	long srcRouter = 0;// 源路由器id
 	long dstRouter = 0;// 目的路由器id
@@ -84,7 +83,8 @@ public class Netflow {
 	int dstAs = -1;
 	byte srcMask = 0;
 	byte dstMask = 0;
-	byte protocol = 0;// === 0C
+
+	// byte protocol = 0;// === 0C
 
 	public Netflow(byte[] buf) {
 		this.routerIP = Utils.byte2long(buf, 0, 4);
@@ -110,24 +110,15 @@ public class Netflow {
 		this.dstAs = (int) Utils.byte2long(buf, 60, 4);
 
 		this.dOctets *= 1000;
-		// srctemp = new byte[4];
-		// srctemp[0] = buf[56];
-		// srctemp[1] = buf[57];
-		// srctemp[2] = buf[58];
-		// srctemp[3] = buf[59];
-		// temp = new byte[4];
-		// temp[0] = buf[60];
-		// temp[1] = buf[61];
-		// temp[2] = buf[62];
-		// temp[3] = buf[63];
 
 		this.srcPrefix = IPTranslator.calLongPrefix(this.srcAddr, this.srcMask);
 		this.dstPrefix = IPTranslator.calLongPrefix(this.dstAddr, this.dstMask);
 
-		if (this.dstPort == 21 || this.dstPort == 23 || this.dstPort == 80) {// 只识别ftp
-			// telnet和http
-			this.protocol = ((Integer) this.dstPort).byteValue();
-		}
+		// if (this.dstPort == 21 || this.dstPort == 23 || this.dstPort == 80)
+		// {// 只识别ftp
+		// // telnet和http
+		// this.protocol = ((Integer) this.dstPort).byteValue();
+		// }
 
 		if (this.dPkts + this.dOctets <= 0) {
 			System.err.println("dPkts and dOctets is illegal");
@@ -300,13 +291,6 @@ public class Netflow {
 	}
 
 	/**
-	 * @return Returns the protocol.
-	 */
-	public byte getProtocol() {
-		return protocol;
-	}
-
-	/**
 	 * @return Returns the srcRouter.
 	 */
 	public long getSrcRouter() {
@@ -334,6 +318,22 @@ public class Netflow {
 	 */
 	public void setDstRouter(long dstRouter) {
 		this.dstRouter = dstRouter;
+	}
+
+	/**
+	 * @param srcAs
+	 *            The srcAs to set.
+	 */
+	public void setSrcAs(int srcAs) {
+		this.srcAs = srcAs;
+	}
+
+	/**
+	 * @param dstAs
+	 *            The dstAs to set.
+	 */
+	public void setDstAs(int dstAs) {
+		this.dstAs = dstAs;
 	}
 
 	/**

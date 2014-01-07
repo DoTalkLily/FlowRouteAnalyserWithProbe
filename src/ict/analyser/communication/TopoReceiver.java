@@ -36,8 +36,9 @@ import java.util.logging.Logger;
 public class TopoReceiver extends Thread {
 	private static int port = 2012;// 端口号(待定)
 	private static int bufferSize = 50 * 1024;// 缓冲区大小
-	private boolean signal = false;// 第一个周期开始接收文件时发送给主线程的signal
+	private boolean startSignal = false;// 每个周期开始接收文件时发送给主线程的signal
 	private boolean isTopoChanged = true;// 判断拓扑是否发生改变
+	private boolean topoReadySignal = false;// 当前周期拓扑是否解析完成信号
 	private boolean isOuterInfoChanged = true;// 判断bgp是否发生改变
 	private Socket client = null;// 保存接收到连接的socket
 	private Lock topoLocker = null;// 为topo数据加锁
@@ -100,10 +101,12 @@ public class TopoReceiver extends Thread {
 	private void initAConnect() throws IOException {
 		this.client = server.accept();
 
-		if (this.client != null) {// 如果接收到连接，说明可以开始下一个周期的分析，更改本地接受到拓扑文件的信号
-			sendSignal();
-		} else {
+		if (this.client == null) {
 			return;
+		}
+
+		if (processer.getPidIndex() != 1) {
+			sendSignal();
 		}
 
 		this.configData = this.processer.getConfigData();
@@ -156,10 +159,9 @@ public class TopoReceiver extends Thread {
 
 		logger.info("拓扑文件接收了" + passedlen + "B");
 
-		String protocal = processer.getProtocol();
-
-		if (protocal == null) {// 根据是否有协议类型来判断是否已经收到过配置文件了，如果没收到配置文件，发送awake给web发布
-			writer.print("awake");
+		if (processer.getPidIndex() == 1) {// 根据是否有协议类型来判断是否已经收到过配置文件了，如果没收到配置文件，发送awake给web发布
+			writer.println("awake");
+			System.out.println("awake sent...");
 		} else {
 			writer.println("ack");// 向服务器发送ack
 		}
@@ -180,9 +182,6 @@ public class TopoReceiver extends Thread {
 			if (fileIn != null) {
 				fileIn.close();
 			}
-			if (client != null) {
-				client.close();
-			}
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -194,21 +193,25 @@ public class TopoReceiver extends Thread {
 	 */
 	private void processTopo() {
 		topoLocker.lock();
-		this.isOuterInfoChanged = true;
-		this.isTopoChanged = true;
-
 		try {
 			// 调用处理topo文件函数 写在FileProcesser里
 			if (this.protocol.equalsIgnoreCase("ospf")) {
 				OspfTopo newTopo = FileProcesser.readOspfTopo(this.ospfPath);
 				this.isTopoChanged = FileProcesser.isTopoChanged();
 				this.isOuterInfoChanged = FileProcesser.isOuterInfoChanged();
+				System.out.println("outter:" + this.isOuterInfoChanged
+						+ "   topo:" + this.isTopoChanged);
 
+				this.processer.setPid(FileProcesser.getPid());
 				if (this.isTopoChanged) {// 如果topo改变了
 					if (this.isOuterInfoChanged) {// 如果bgp和LSA5信息变了
 						if (newTopo == null) {// 但是没解析到拓扑数据，报错返回，用原来拓扑数据
+							this.ospfTopo = null;// 这种情况清空拓扑
 							logError("topo is changed but no topo data!");
 							return;
+						}
+						if (processer.getPidIndex() == 1) {// 这里卡主主线程直到接受到第一份完整拓扑再开始运算
+							sendSignal();//
 						}
 						this.ospfTopo = newTopo;// 否则用新拓扑中数据
 					} else { // 如果可达性信息没变
@@ -216,12 +219,18 @@ public class TopoReceiver extends Thread {
 							logError("topo is changed but no topo data!");
 							return;
 						}
+
+						if (this.ospfTopo == null) {
+							logError("exception:first topo data only contains 'Topo' without 'OuterInfo'!");
+							return;
+						}
 						// 否则bgp用原来数据，但是用的是深拷贝，不然这种引用会导致原来的ospfTopo对象不能释放，导致内存泄露，拓扑部分用新数据
-						this.ospfTopo = newTopo;
-						this.ospfTopo.setMapPrefixBgpItem(this.ospfTopo
+
+						newTopo.setMapPrefixBgpItem(this.ospfTopo
 								.getMapPrefixBgpItem());
-						this.ospfTopo.setMapPrefixExternalLsa(this.ospfTopo
+						newTopo.setMapPrefixExternalLsa(this.ospfTopo
 								.getMapPrefixExternalLsa());
+						this.ospfTopo = newTopo;
 					}
 
 				} else {// 如果拓扑没改变，只更改pid和外部信息
@@ -229,6 +238,11 @@ public class TopoReceiver extends Thread {
 
 					if (pid == 0) {
 						logError("topo is not changed but pid is 0");
+						return;
+					}
+
+					if (this.ospfTopo == null) {// 仅用于处理第一个周期拓扑文件为空的异常情况
+						logError("first period topo is null!");
 						return;
 					}
 
@@ -252,7 +266,7 @@ public class TopoReceiver extends Thread {
 				IsisTopo newTopo = FileProcesser.readIsisTopo(this.isisPath);
 				this.isTopoChanged = FileProcesser.isTopoChanged();
 				this.isOuterInfoChanged = FileProcesser.isOuterInfoChanged();
-
+				this.processer.setPid(FileProcesser.getPid());
 				if (this.isTopoChanged) {// 如果topo改变了
 					if (this.isOuterInfoChanged) {// 如果可达性信息改变
 						if (newTopo == null) {// 但是没解析到拓扑数据，报错返回，用原来拓扑数据
@@ -266,19 +280,18 @@ public class TopoReceiver extends Thread {
 							return;
 						}
 						// 否则bgp用原来数据，但是用的是深拷贝，不然这种引用会导致原来的isisTopo对象不能释放，导致内存泄露，拓扑部分用新数据
-						this.isisTopo = newTopo;
-
-						this.isisTopo.setMapPrefixRidForStub(this.isisTopo
+						newTopo.setMapPrefixRidForStub(this.isisTopo
 								.getMapPrefixRidForStub());
 
 						if (newTopo.getNetworkType() == 1) {
-							this.isisTopo.setMapPrefixReachForL1(this.isisTopo
+							newTopo.setMapPrefixReachForL1(this.isisTopo
 									.getMapPrefixReachForL1());
 						} else {
-							this.isisTopo.setMapPrefixRidForL2(this.isisTopo
+							newTopo.setMapPrefixRidForL2(this.isisTopo
 									.getMapPrefixRidForL2());
 						}
 
+						this.isisTopo = newTopo;
 					}
 
 				} else {// 如果拓扑没改变，只更改pid和外部信息
@@ -313,9 +326,10 @@ public class TopoReceiver extends Thread {
 					}
 				}
 			}
-
-			topoCondition.signal();// topo is ready
 		} finally {
+			System.out.println("topo ready signal....");
+			this.topoReadySignal = true;
+			topoCondition.signal();// topo is ready
 			topoLocker.unlock();
 		}
 	}
@@ -334,7 +348,11 @@ public class TopoReceiver extends Thread {
 	public OspfTopo getOspfTopo() {
 		topoLocker.lock(); // 加锁
 		try {
-			topoCondition.await();// 等待
+			if (!this.topoReadySignal) {
+				System.out.println("get topo await....");
+				topoCondition.await();// 等待
+			}
+			this.topoReadySignal = false;
 			return this.ospfTopo; // 返回一次拓扑后，拓扑设为空
 		} catch (InterruptedException e) {
 			e.printStackTrace();
@@ -352,7 +370,10 @@ public class TopoReceiver extends Thread {
 	public IsisTopo getIsisTopo() {
 		topoLocker.lock(); // 加锁
 		try {
-			topoCondition.await();// 等待
+			if (!this.topoReadySignal) {
+				topoCondition.await();// 等待
+			}
+			this.topoReadySignal = false;
 			return this.isisTopo;
 		} catch (InterruptedException e) {
 			e.printStackTrace();
@@ -363,24 +384,27 @@ public class TopoReceiver extends Thread {
 	}
 
 	public void getTopoSignal() {
-		signalLocker.lock();
+		this.signalLocker.lock();
 		try {
-			if (!signal) {
-				signalCondition.await();
+			if (!this.startSignal) {
+				System.out.println("get start signal...awaiting...");
+				this.signalCondition.await();
+				System.out.println("main process ...wake up...");
 			}
-			signal = false;
+			this.startSignal = false;
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		} finally {
-			signalLocker.unlock();
+			this.signalLocker.unlock();
 		}
 	}
 
 	public void sendSignal() {
 		this.signalLocker.lock();
 		try {
-			this.signal = true;
+			this.startSignal = true;
 			this.signalCondition.signal();
+			System.out.println("get topo signal...wakeup...");
 		} finally {
 			this.signalLocker.unlock();
 		}

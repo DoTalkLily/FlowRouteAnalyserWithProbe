@@ -175,8 +175,8 @@ public class FileProcesser {
 
 				// 如果没有条目
 				if (mapPrefixBgpItem.size() == 0 && mapPrefixLsa5.size() == 0) {
-					logError("bgp info and lsa5 info are null which should be given");
-					return null;
+					logger.info("bgp info and lsa5 info are null which should be given");
+					// return null;
 				}
 
 				// 如果拓扑信息没改变，即文件中没有“Topo”一块，这里topo是没初始化的；用解析的两个结构初始化，因为参数为空的构造函数要多初始化多个无用变量
@@ -380,14 +380,19 @@ public class FileProcesser {
 		String nRouterId = null;
 		OspfRouter router = null;
 		String interfaceIP = null;
-		OspfTopo topo = new OspfTopo(true);
-		// pid
-		topo.setPeriodId(pid);
+
 		try {
 			// nodes
 			JSONArray nodes = topoObj.getJSONArray("nodes");
 			size = nodes.length();
 
+			if (size == 0) {// 如果有“Topo”但是沒有数据，认为是拓扑数据异常，不进行分析
+				return null;
+			}
+
+			OspfTopo topo = new OspfTopo(true);
+			// pid
+			topo.setPeriodId(pid);
 			for (int i = 0; i < size; i++) {
 				router = new OspfRouter();
 				JSONObject node = nodes.getJSONObject(i);
@@ -655,8 +660,6 @@ public class FileProcesser {
 					prefixLong = IPTranslator.calIPtoLong(prefix);
 					item.setPrefix(prefixLong);
 					item.setNextHop(IPTranslator.calIPtoLong(nextHop));
-
-					item.printDetail();// test
 
 					bgpItem = mapPrefixBgp.get(prefixLong);
 

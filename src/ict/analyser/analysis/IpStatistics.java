@@ -23,16 +23,22 @@ import java.util.HashMap;
 public class IpStatistics implements Runnable {
 	private static int as = -1;// 当前拓扑的as号
 	private ArrayList<Long> neighborAsIp = null;
-	private ArrayList<Netflow> allFlows = null;// 当前年周期全部流量的引用
+	private ArrayList<Netflow> allFlows = null;// 当前周期全部流量的引用
 	private HashMap<Long, StatisticItem> allItems = null;// 保存分析结果的映射
 
 	public IpStatistics() {
-		allItems = new HashMap<Long, StatisticItem>();
+		this.allItems = new HashMap<Long, StatisticItem>();
 	}
+
+	long t1 = 0;
 
 	@Override
 	public void run() {
+		t1 = System.currentTimeMillis();
+		System.out.println("ipstate start...");
 		startWorking();
+		System.out.println("ipstate finished:"
+				+ (System.currentTimeMillis() - t1));
 	}
 
 	public void setAS(int asNum) {
@@ -55,9 +61,6 @@ public class IpStatistics implements Runnable {
 		} else {
 			isisNetwork();
 		}
-		// if (this.allItems.size() != 0) {
-		//
-		// }
 	}
 
 	private void isisNetwork() {
@@ -71,7 +74,7 @@ public class IpStatistics implements Runnable {
 		// 开始遍历流，统计在线时长，流量等信息
 		for (int i = 0; i < size; i++) {
 			netflow = this.allFlows.get(i);// 取得一条流
-			updateStatics(netflow, 1);
+			updateStatics(netflow, 1);// isis网络无法从报文中判断流量类型，这里将来要结合路径分析过程去统计
 		}
 	}
 
@@ -91,17 +94,17 @@ public class IpStatistics implements Runnable {
 			dstAS = netflow.getDstAs();// 目的as号
 
 			if ((srcAS == 0 && dstAS == 0) || (srcAS == as && dstAS == as)) {// 如果源和目的设备所在的as号和当前as号相同，是域内flow
-
-				if (this.neighborAsIp != null) {
+				if (this.neighborAsIp == null) {
+					updateStatics(netflow, 1);
+				} else {
 					if (this.neighborAsIp.contains(netflow.getSrcAddr())) {
 						updateStatics(netflow, 2);
 					} else if (this.neighborAsIp.contains(netflow.getDstAddr())) {
 						updateStatics(netflow, 3);
+					} else {
+						updateStatics(netflow, 1);
 					}
 				}
-
-				updateStatics(netflow, 1);
-
 			} else if ((srcAS != as && dstAS == as)
 					|| (srcAS != 0 && dstAS == 0)) { // inbound
 
@@ -134,11 +137,9 @@ public class IpStatistics implements Runnable {
 	}
 
 	private void update(Netflow flow, boolean isSrc) {
-
 		StatisticItem item = null;// 临时变量
-
 		long bytes = flow.getdOctets();
-		long online = flow.getLast() - flow.getFirst();
+		// long online = flow.getLast() - flow.getFirst();
 		long ip = isSrc ? flow.getSrcAddr() : flow.getDstAddr();// 20130531
 		long prefix = isSrc ? flow.getSrcPrefix() : flow.getDstPrefix();
 
@@ -149,7 +150,6 @@ public class IpStatistics implements Runnable {
 				item = new StatisticItem();
 				item.setIp(ip);
 				item.setPrefix(prefix);
-				item.setOnline((int) online);
 
 				if (isSrc) { // 20130531
 					item.addOutFlow(bytes, flow.getDstPort());
@@ -157,11 +157,12 @@ public class IpStatistics implements Runnable {
 					item.addInFlow(bytes, flow.getDstPort());
 				}
 
-				item.setTimes(flow.getFirst(), flow.getLast());
+				// item.setTimes(flow.getFirst(), flow.getLast());
 				this.allItems.put(ip, item);
 			} else {
 				// 统计在线时长
-				item.setTimes(flow.getFirst(), flow.getLast());// 这里实际是把所有时间段都保存，并按照每段的first大小排序
+				// item.setTimes(flow.getFirst(), flow.getLast());//
+				// 这里实际是把所有时间段都保存，并按照每段的first大小排序
 				// 在线时长统计完毕
 
 				// 统计ip对应流量
@@ -172,6 +173,7 @@ public class IpStatistics implements Runnable {
 				}
 				// ip对应流量统计完毕
 			}
+			item.setOnline();
 		}
 	}
 
@@ -189,5 +191,4 @@ public class IpStatistics implements Runnable {
 	public HashMap<Long, StatisticItem> getAllItems() {
 		return allItems;
 	}
-
 }

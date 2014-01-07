@@ -1,5 +1,10 @@
 package ict.analyser.tools;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+
 public abstract class Utils {
 	public static byte IntToByte(int i) {
 		return (byte) i;
@@ -89,12 +94,12 @@ public abstract class Utils {
 	static public long byte2longSmall(byte[] p, int off, int len) {
 		long ret = 0;
 		int done = off + len;
-		for (int i = done-1; i >=off; i--)
+		for (int i = done - 1; i >= off; i--)
 			ret = ((ret << 8) & 0xffffffff) + (p[i] & 0xff);
 
 		return ret;
 	}
-	
+
 	public static int byte2int(byte[] p, int offset) {
 		return (int) byte2long(p, offset, 2);
 	}
@@ -102,7 +107,7 @@ public abstract class Utils {
 	public static short byte2short(byte[] p, int offset) {
 		return (short) byte2long(p, offset, 2);
 	}
-	
+
 	static private final String value(long num, String msg) {
 		if (num == 0)
 			return "";
@@ -148,6 +153,25 @@ public abstract class Utils {
 
 		return value1(day) + '-' + value1(hour) + ':' + value1(min) + ':'
 				+ value1(sec);
+	}
+
+	static SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmm");
+	static int START_YEAR = 2013;
+
+	static public final int pid2HourOfYear(long pid) {
+		Date date = null;
+		try {
+			date = sdf.parse(pid + "");
+			Calendar calendar = Calendar.getInstance(); // 得到日历
+			calendar.setTime(date);// 把当前时间赋给日历
+			// 距离2013年1月1日0点过去过少个小时
+			return (calendar.get(Calendar.YEAR) - START_YEAR) * 8760
+					+ calendar.get(Calendar.DAY_OF_YEAR) * 24
+					+ +calendar.get(Calendar.HOUR_OF_DAY);
+		} catch (ParseException e) {
+			e.printStackTrace();
+		}
+		return 0;
 	}
 
 	static public final String toInterval(long i) {

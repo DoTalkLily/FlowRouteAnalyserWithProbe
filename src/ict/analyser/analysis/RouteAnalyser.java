@@ -50,9 +50,9 @@ public class RouteAnalyser {
 	}
 
 	public void resetMaterials() {
+		this.netflows.clear();
 		this.foundPath.clear();// 这里去掉bug现象是：结果上报了本周起没有的链路。
 		// 原因：这里没按周期清空，因此链路丢失也一直会保存已找到的路径。
-		this.netflows.clear();
 		this.isisAnalysers.clear();
 		this.ospfAnalysers.clear();
 	}
@@ -63,7 +63,6 @@ public class RouteAnalyser {
 	 */
 	public void ospfPreCalculate() {
 		resetMaterials();
-
 		int size = this.ospfTopo.getRouterCount();// 获得全网路由器总数
 
 		if (size == 0) {
@@ -107,6 +106,8 @@ public class RouteAnalyser {
 	int flowCount = 0;
 
 	public void ospfRouteCalculate(long period, int count) {
+		this.ospfAnalysers.clear();// bug修正：之前在topo数据没变化的时候没有清理ospfanalyser
+		// 和isisanalyser列表，导致单个线程结束后唤醒的是就线程对象，因此不能唤醒。
 		start = System.currentTimeMillis();
 		logger.info("start the timer:" + start);
 		flowCount = count;
@@ -121,6 +122,7 @@ public class RouteAnalyser {
 		if (flowSize < SINGLE_COUNT) {
 			ospfAnalyser = new OspfAnalyser(this, false);
 			ospfAnalyser.setNetflow(this.netflows);// 设置netflow数据
+			this.ospfAnalysers.add(ospfAnalyser);
 			new Thread(ospfAnalyser).start();// 线程开始运行
 			gatherResult(ospfAnalyser);
 		} else {
@@ -136,6 +138,8 @@ public class RouteAnalyser {
 
 			for (int i = 0; i < this.divideCount; i++) {
 				ospfAnalyser = this.ospfAnalysers.get(i);
+				System.out.println("divide count:" + this.divideCount + "  i:"
+						+ i);
 				gatherResult(ospfAnalyser);
 			}
 		}
@@ -145,6 +149,7 @@ public class RouteAnalyser {
 	}
 
 	public void isisRouteCalculate(long period) {
+		this.isisAnalysers.clear();
 		int eachSize = 0;
 		this.period = period;
 		IsisAnalyser isisAnalyser = null;// isis路径分析类
@@ -244,7 +249,7 @@ public class RouteAnalyser {
 			id = entry.getKey();
 			toAdd = entry.getValue();
 
-			if (id != 0 && toAdd != null && mapLidTlink.containsKey(id)) {
+			if (id != 0 && toAdd != null && this.mapLidTlink.containsKey(id)) {
 				inArr = this.mapLidTlink.get(id);
 
 				if (inArr == null) {

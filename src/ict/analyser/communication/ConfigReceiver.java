@@ -134,9 +134,6 @@ public class ConfigReceiver extends Thread {
 			if (fileIn != null) {
 				fileIn.close();
 			}
-			if (client != null) {
-				client.close();
-			}
 		} catch (IOException e) {
 			e.printStackTrace();
 			return;
@@ -151,7 +148,7 @@ public class ConfigReceiver extends Thread {
 		try {
 			this.configData = FileProcesser.readConfigData(SAVE_PATH);// 调用处理config文件函数
 																		// 写在FileProcesser里
-			this.configData.printDetail();// 打印config
+			// this.configData.printDetail();// 打印config
 			condition.signalAll();// 发送信号唤醒等待
 		} finally {
 			locker.unlock();

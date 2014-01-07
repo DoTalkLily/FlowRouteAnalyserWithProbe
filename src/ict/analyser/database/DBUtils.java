@@ -13,13 +13,14 @@ import java.util.Vector;
 
 /**
  * 
+ * 程序运行时，不要重启mysql 会 报Broken pipe 异常
  * 
  * @author 25hours
  * @version 1.0, 2012-12-8
  */
 public class DBUtils {
 	private final static String DRIVER = "com.mysql.jdbc.Driver";
-	private final static String URL = "jdbc:mysql://127.0.0.1:3306/netflow";
+	private final static String URL = "jdbc:mysql://127.0.0.1:3306/netflow?autoReconnect=true";
 	private final static String USER = "root";
 	private final static String PASSWORD = "qazwsx";
 	private static Vector<Connection> pool = new Vector<Connection>();// 去掉了final
