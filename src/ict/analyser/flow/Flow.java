@@ -15,14 +15,12 @@ import ict.analyser.netflow.Netflow;
  * @version 1.0, 2012-10-23
  */
 public class Flow {
-	private int direction = 0;
 	private Path path = null;// 路径
 	private Netflow netflow = null;// flow中包含的netflow对象
 
-	public Flow(Netflow netflow, Path path, int direction) {
+	public Flow(Netflow netflow, Path path) {
 		this.path = path;
 		this.netflow = netflow;
-		this.direction = direction;
 	}
 
 	// 临时加
@@ -35,21 +33,6 @@ public class Flow {
 	 */
 	public Netflow getNetflow() {
 		return netflow;
-	}
-
-	/**
-	 * @return Returns the direction.
-	 */
-	public int getDirection() {
-		return direction;
-	}
-
-	/**
-	 * @param direction
-	 *            The direction to set.
-	 */
-	public void setDirection(int direction) {
-		this.direction = direction;
 	}
 
 	/**

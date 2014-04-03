@@ -6,18 +6,21 @@
  */
 package ict.analyser.analysis;
 
+import ict.analyser.common.Constant;
+import ict.analyser.database.DBOperator;
 import ict.analyser.flow.Path;
 import ict.analyser.flow.TrafficLink;
 import ict.analyser.isistopo.IsisTopo;
 import ict.analyser.netflow.Netflow;
 import ict.analyser.ospftopo.OspfTopo;
+import ict.analyser.statistics.StatisticItem;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.logging.Logger;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 
@@ -26,33 +29,27 @@ import java.util.logging.Logger;
  * @version 1.0, 2012-11-22
  */
 public class RouteAnalyser {
-	private long period = 0;
-	private int divideCount = 0;
-	private static int SINGLE_COUNT = 1000;// 流数量小于singleCount的只需要一个analyser就能执行，待定
+	private long pid = 0;
 	private OspfTopo ospfTopo = null;
 	private IsisTopo isisTopo = null;
-	private ArrayList<Netflow> netflows = null;// flow接收模块分析并聚合后得到的报文对象列表
-	private ArrayList<Long> allRouterIds = null;// 全部路由器id列表
-	private HashMap<String, Path> foundPath = null;// key是源路由器id+“_”+目的路由器id
 	private ArrayList<OspfAnalyser> ospfAnalysers = null;// 维护一个所有正在运行的分析线程的列表
 	private ArrayList<IsisAnalyser> isisAnalysers = null;// 维护一个所有正在运行的分析线程的列表
 	private HashMap<String, Long> mapProtocalBytes = null;// 赋值给每个TrafficLink的映射
 	private HashMap<Integer, String> mapPortProtocal = null;// 维护一个端口号——协议名字映射
 	private HashMap<Integer, TrafficLink> mapLidTlink = null;// linkid——traffic
-	private Logger logger = Logger.getLogger(RouteAnalyser.class.getName());// 注册一个logger
+	private ConcurrentHashMap<String, Path> foundPath = null;// key是源路由器id+“_”+目的路由器id
+	private ConcurrentHashMap<Long, StatisticItem> allItems = null;// 保存分析结果的映射
 
 	public RouteAnalyser() {
-		this.netflows = new ArrayList<Netflow>();
-		this.foundPath = new HashMap<String, Path>();
 		this.ospfAnalysers = new ArrayList<OspfAnalyser>();
 		this.isisAnalysers = new ArrayList<IsisAnalyser>();
 		this.mapLidTlink = new HashMap<Integer, TrafficLink>();
+		this.foundPath = new ConcurrentHashMap<String, Path>();
+		this.allItems = new ConcurrentHashMap<Long, StatisticItem>();
 	}
 
 	public void resetMaterials() {
-		this.netflows.clear();
-		this.foundPath.clear();// 这里去掉bug现象是：结果上报了本周起没有的链路。
-		// 原因：这里没按周期清空，因此链路丢失也一直会保存已找到的路径。
+		this.foundPath.clear();// 这里去掉bug现象是：结果上报了本周起没有的链路。原因：这里没按周期清空，因此链路丢失也一直会保存已找到的路径。
 		this.isisAnalysers.clear();
 		this.ospfAnalysers.clear();
 	}
@@ -63,137 +60,146 @@ public class RouteAnalyser {
 	 */
 	public void ospfPreCalculate() {
 		resetMaterials();
-		int size = this.ospfTopo.getRouterCount();// 获得全网路由器总数
 
-		if (size == 0) {
-			logger.warning("no router in topo!");
-			return;
+		ArrayList<Long> allRouterIds = this.ospfTopo.getAllRouterIds();// 得到全部路由器id列表，供n个线程互斥访问
+		int eachSize = allRouterIds.size() / Constant.PRECAL_THREAD_COUNT;// 将条目总数分成若干份，每份条目数
+
+		for (int i = 0; i < Constant.PRECAL_THREAD_COUNT; i++) {
+			OspfAnalyser analyser = new OspfAnalyser(this, this.ospfTopo,
+					Constant.PRE_CAL, null);// 第二个参数决定是否是提前分析路径
+			analyser.setRouterIdsToPrecal(allRouterIds.subList(i * eachSize,
+					(i + 1) * eachSize));
+			analyser.start();
+			ospfAnalysers.add(analyser);// 线程开始运行
 		}
 
-		this.index = 0;// 索引从零开始记
-		this.allRouterIds = this.ospfTopo.getAllRouterIds();// 得到全部路由器id列表，供n个线程互斥访问
-		this.divideCount = (MainProcesser.DIVIDE_COUNT == 0) ? 5
-				: MainProcesser.DIVIDE_COUNT;
-
-		for (int i = 0; i < this.divideCount; i++) {
-			OspfAnalyser ospfAnalyser = new OspfAnalyser(this, true);// 第二个参数决定是否是提前分析路径
-			new Thread(ospfAnalyser).start();// 线程开始运行
+		for (int i = 0; i < Constant.PRECAL_THREAD_COUNT; i++) {// 等待全部线程结束
+			try {
+				ospfAnalysers.get(i).join();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
 		}
 	}
 
 	public void isisPreCalculate() {
 		resetMaterials();
 
-		int size = this.isisTopo.getRouterCount();// 获得全网路由器总数
+		ArrayList<Long> allRouterIds = this.isisTopo.getAllRouterIds();// 得到全部路由器id列表，供n个线程互斥访问
+		int eachSize = allRouterIds.size() / Constant.PRECAL_THREAD_COUNT;// 将条目总数分成若干份，每份条目数
 
-		if (size == 0) {
-			logger.warning("no router in topo!");
+		for (int i = 0; i < Constant.PRECAL_THREAD_COUNT; i++) {
+			IsisAnalyser analyser = new IsisAnalyser(this, this.isisTopo,
+					Constant.PRE_CAL, null);// 第二个参数决定是否是提前分析路径
+			analyser.setRouterIdsToPrecal(allRouterIds.subList(i * eachSize,
+					(i + 1) * eachSize));
+			analyser.start();
+			isisAnalysers.add(analyser);
+		}
+
+		for (int i = 0; i < Constant.PRECAL_THREAD_COUNT; i++) {
+			try {
+				isisAnalysers.get(i).join();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+
+	public void ospfRouteCalculate(long pid, int index,
+			ArrayList<Netflow> netflows) {
+		this.allItems.clear();
+		this.ospfAnalysers.clear();// bug修正：之前在topo数据没变化的时候没有清理ospfanalyser
+		// 和isisanalyser列表，导致单个线程结束后唤醒的是就线程对象，因此不能唤醒。
+
+		if (netflows == null || netflows.size() == 0) {
 			return;
 		}
 
-		this.index = 0;// 索引从零开始记
-		this.allRouterIds = this.ospfTopo.getAllRouterIds();// 得到全部路由器id列表，供n个线程互斥访问
-		this.divideCount = (MainProcesser.DIVIDE_COUNT == 0) ? 3
-				: MainProcesser.DIVIDE_COUNT;
-
-		for (int i = 0; i < this.divideCount; i++) {
-			IsisAnalyser isisAnalyser = new IsisAnalyser(this, true);// 第二个参数决定是否是提前分析路径
-			new Thread(isisAnalyser).start();// 线程开始运行
+		if (pid % 10000 == 0 || index == 1) {
+			DBOperator.createTable(pid);
 		}
-	}
 
-	long start = 0;
-	int flowCount = 0;
+		this.pid = pid;
+		OspfAnalyser analyser = null;
 
-	public void ospfRouteCalculate(long period, int count) {
-		this.ospfAnalysers.clear();// bug修正：之前在topo数据没变化的时候没有清理ospfanalyser
-		// 和isisanalyser列表，导致单个线程结束后唤醒的是就线程对象，因此不能唤醒。
-		start = System.currentTimeMillis();
-		logger.info("start the timer:" + start);
-		flowCount = count;
-
-		int eachSize = 0;
-		this.period = period;
-		OspfAnalyser ospfAnalyser = null;// 临时变量
-		int flowSize = this.netflows.size(); // 获得全部netflow的条目总数
-		this.divideCount = (MainProcesser.DIVIDE_COUNT == 0) ? 3
-				: MainProcesser.DIVIDE_COUNT;
-
-		if (flowSize < SINGLE_COUNT) {
-			ospfAnalyser = new OspfAnalyser(this, false);
-			ospfAnalyser.setNetflow(this.netflows);// 设置netflow数据
-			this.ospfAnalysers.add(ospfAnalyser);
-			new Thread(ospfAnalyser).start();// 线程开始运行
-			gatherResult(ospfAnalyser);
+		if (netflows.size() < Constant.A_FEW) {
+			analyser = new OspfAnalyser(this, this.ospfTopo,
+					Constant.ROUTE_CAL, netflows);
+			analyser.start();
+			this.ospfAnalysers.add(analyser);
 		} else {
-			eachSize = flowSize / this.divideCount;// 将条目总数分成若干份，每份条目数
+			int eachSize = netflows.size() / Constant.FLOWCAL_THREAD_COUNT;// 将条目总数分成若干份，每份条目数
 
-			for (int i = 0; i < this.divideCount; i++) {// 为每份netflow分别起一个RouteAnalysis线程
-				ospfAnalyser = new OspfAnalyser(this, false);
-				ospfAnalyser.setNetflow(this.netflows.subList(i * eachSize,
-						(i + 1) * eachSize));// 设置netflow数据
-				this.ospfAnalysers.add(ospfAnalyser);// 加入列表集中管理
-				new Thread(ospfAnalyser).start();// 线程开始运行
-			}
-
-			for (int i = 0; i < this.divideCount; i++) {
-				ospfAnalyser = this.ospfAnalysers.get(i);
-				System.out.println("divide count:" + this.divideCount + "  i:"
-						+ i);
-				gatherResult(ospfAnalyser);
+			for (int i = 0; i < Constant.FLOWCAL_THREAD_COUNT; i++) {// 为每份netflow分别起一个RouteAnalysis线程
+				analyser = new OspfAnalyser(this, this.ospfTopo,
+						Constant.ROUTE_CAL, netflows.subList(i * eachSize,
+								(i + 1) * eachSize));
+				analyser.start();
+				this.ospfAnalysers.add(analyser);// 加入列表集中管理
 			}
 		}
 
-		long interval = System.currentTimeMillis() - start;
-		logger.info("flow count:" + flowCount + "  in :" + interval);
+		for (int i = 0, len = this.ospfAnalysers.size(); i < len; i++) {
+			analyser = this.ospfAnalysers.get(i);
+
+			try {
+				analyser.join();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+
+			gatherLidTraffic(analyser.getMapLidTraffic());
+		}
+		netflows.clear();
 	}
 
-	public void isisRouteCalculate(long period) {
+	public void isisRouteCalculate(long pid, int index,
+			ArrayList<Netflow> netflows) {
+		this.allItems.clear();
 		this.isisAnalysers.clear();
-		int eachSize = 0;
-		this.period = period;
-		IsisAnalyser isisAnalyser = null;// isis路径分析类
-		int flowSize = this.netflows.size(); // 获得全部netflow的条目总数
-		this.divideCount = (MainProcesser.DIVIDE_COUNT == 0) ? 3
-				: MainProcesser.DIVIDE_COUNT;
 
-		if (flowSize < SINGLE_COUNT) {// 如果流大小小于一定数量（待定），只分给一个analyser计算
-			isisAnalyser = new IsisAnalyser(this, false);
-			isisAnalyser.setNetflow(this.netflows);// 设置netflow数据
-			new Thread(isisAnalyser).start();// 线程开始运行
-			gatherResult(isisAnalyser);// 手机结果
+		if (netflows == null || netflows.size() == 0) {
+			return;
+		}
+
+		if (pid % 10000 == 0 || index == 1) {
+			DBOperator.createTable(pid);
+		}
+
+		this.pid = pid;
+		IsisAnalyser analyser = null;// isis路径分析类
+
+		if (netflows.size() < Constant.A_FEW) {// 如果流大小小于一定数量（待定），只分给一个analyser计算
+			analyser = new IsisAnalyser(this, this.isisTopo,
+					Constant.ROUTE_CAL, netflows);
+			analyser.start();// 线程开始运行
+			isisAnalysers.add(analyser);
 		} else {
-			eachSize = flowSize / this.divideCount;// 将条目总数分成若干份，每份条目数
+			int eachSize = netflows.size() / Constant.FLOWCAL_THREAD_COUNT;// 将条目总数分成若干份，每份条目数
 
-			for (int i = 0; i < this.divideCount; i++) {// 为每份netflow分别起一个RouteAnalysis线程
-				isisAnalyser = new IsisAnalyser(this, false);
-				isisAnalyser.setNetflow(this.netflows.subList(i * eachSize,
-						(i + 1) * eachSize));// 设置netflow数据
-				this.isisAnalysers.add(isisAnalyser);// 加入列表集中管理
-				new Thread(isisAnalyser).start();// 线程开始运行
-			}
+			for (int i = 0; i < Constant.FLOWCAL_THREAD_COUNT; i++) {// 为每份netflow分别起一个RouteAnalysis线程
+				analyser = new IsisAnalyser(this, this.isisTopo,
+						Constant.ROUTE_CAL, netflows.subList(i * eachSize,
+								(i + 1) * eachSize));
+				analyser.start();
+				this.isisAnalysers.add(analyser);// 加入列表集中管理
 
-			for (int i = 0; i < this.divideCount; i++) {
-				isisAnalyser = this.isisAnalysers.get(i);
-				gatherResult(isisAnalyser);
 			}
 		}
 
-	}
+		for (int i = 0, len = this.isisAnalysers.size(); i < len; i++) {
+			analyser = this.isisAnalysers.get(i);
 
-	public void gatherResult(IsisAnalyser isisAnalyser) {
-		isisAnalyser.completedSignal();// 如果完成了
-		gatherLidTraffic(isisAnalyser.getMapLidTraffic());// 与主线程中保存这一结果的映射合并，相同id的flow叠加
-	}
+			try {
+				analyser.join();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
 
-	/**
-	 * 
-	 * 
-	 * @param ospfAnalyser
-	 */
-	private void gatherResult(OspfAnalyser ospfAnalyser) {
-		ospfAnalyser.completedSignal();// 如果已经分析完了
-		gatherLidTraffic(ospfAnalyser.getMapLidTraffic());// 与主线程中保存这一结果的映射合并，相同id的flow叠加
+			gatherLidTraffic(analyser.getMapLidTraffic());
+		}
+		netflows.clear();
 	}
 
 	/**
@@ -204,7 +210,7 @@ public class RouteAnalyser {
 	 * @param path
 	 *            源到目的路径
 	 */
-	public synchronized void insertFoundPath(String ids, Path path) {
+	public void insertFoundPath(String ids, Path path) {
 		this.foundPath.put(ids, path);
 	}
 
@@ -215,7 +221,7 @@ public class RouteAnalyser {
 	 *            源id+“_”+目的id字符串
 	 * @return 缓存的path，如果没有返回空
 	 */
-	public synchronized Path getPathByIds(String ids) {
+	public Path getPathByIds(String ids) {
 		return this.foundPath.get(ids);
 	}
 
@@ -224,7 +230,7 @@ public class RouteAnalyser {
 	 * 
 	 * @param paths
 	 */
-	public synchronized void insertMorePath(HashMap<String, Path> paths) {
+	public void insertMorePath(HashMap<String, Path> paths) {
 		this.foundPath.putAll(paths);
 	}
 
@@ -261,25 +267,67 @@ public class RouteAnalyser {
 		}
 	}
 
+	public void updateStatics(Netflow flow, int direction) {
+		if (flow == null) {
+			return;
+		}
+
+		if (direction == 1 || direction == 3) {// internal & outbound
+			update(flow, true);
+		}
+
+		if (direction == 1 || direction == 2) {// internal & inbound
+			update(flow, false);
+		}
+	}
+
+	private void update(Netflow flow, boolean isSrc) {
+		StatisticItem item = null;// 临时变量
+		long bytes = flow.getdOctets();
+		// long online = flow.getLast() - flow.getFirst();
+		long ip = isSrc ? flow.getSrcAddr() : flow.getDstAddr();// 20130531
+		long prefix = isSrc ? flow.getSrcPrefix() : flow.getDstPrefix();
+
+		if (ip != 0) {
+			item = this.allItems.get(ip);
+
+			if (item == null) {
+				item = new StatisticItem();
+				item.setIp(ip);
+				item.setPrefix(prefix);
+
+				if (isSrc) { // 20130531
+					item.addOutFlow(bytes, flow.getDstPort());
+				} else {
+					item.addInFlow(bytes, flow.getDstPort());
+				}
+
+				// item.setTimes(flow.getFirst(), flow.getLast());
+				this.allItems.put(ip, item);
+			} else {
+				// 统计在线时长
+				// item.setTimes(flow.getFirst(), flow.getLast());//
+				// 这里实际是把所有时间段都保存，并按照每段的first大小排序
+				// 在线时长统计完毕
+
+				// 统计ip对应流量
+				if (isSrc) {
+					item.addOutFlow(bytes, flow.getDstPort());// 将出流量叠加
+				} else {
+					item.addInFlow(bytes, flow.getDstPort());
+				}
+				// ip对应流量统计完毕
+			}
+			item.setOnline();
+		}
+	}
+
 	/**
 	 * @return Returns the mapProtocalBytes.
 	 */
 	@SuppressWarnings("unchecked")
 	public HashMap<String, Long> getMapProtocalBytes() {
 		return (HashMap<String, Long>) mapProtocalBytes.clone();
-	}
-
-	private int index = 0;// 当前已经分析到的路由器id在列表中的索引
-
-	public synchronized long getOneRouterId() {
-		if (index < this.allRouterIds.size()) {
-			return this.allRouterIds.get(index++);
-		}
-		return -1;
-	}
-
-	public void setNetflows(ArrayList<Netflow> flows) {
-		this.netflows = flows;
 	}
 
 	public void setTopo(OspfTopo topo) {
@@ -296,24 +344,10 @@ public class RouteAnalyser {
 	}
 
 	/**
-	 * @return Returns the ospfTopo.
-	 */
-	public OspfTopo getOspfTopo() {
-		return ospfTopo;
-	}
-
-	/**
 	 * @return Returns the period.
 	 */
 	public long getPeriod() {
-		return period;
-	}
-
-	/**
-	 * @return Returns the isisTopo.
-	 */
-	public IsisTopo getIsisTopo() {
-		return isisTopo;
+		return pid;
 	}
 
 	/**
@@ -374,5 +408,12 @@ public class RouteAnalyser {
 
 	public HashMap<Integer, TrafficLink> getMapLidTlink() {
 		return this.mapLidTlink;
+	}
+
+	/**
+	 * @return Returns the allItems.
+	 */
+	public ConcurrentHashMap<Long, StatisticItem> getAllItems() {
+		return allItems;
 	}
 }

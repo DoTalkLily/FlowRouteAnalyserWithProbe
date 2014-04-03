@@ -81,17 +81,12 @@ public class QueryTask implements Runnable {
 
 	private void queryFlow(JSONObject queryObject) {
 		int topN;
-		long startPid;
-		long endPid;
-		String protocal;
-		JSONObject params;
-		String level, src, dst;
-		String whereCondition = "";
-		String sql;
-		String selectStr = "select sum(bytes) as byte,srcIP, dstIP,srcPort,dstPort, path, protocal,input,tos,routerIp,srcMask,dstMask,srcAS,dstAS from netflow where ";
+		long startPid, endPid;
+		String src, dst, level, protocal;
 
+		// 字段提取
 		try {
-			params = queryObject.getJSONObject("params");
+			JSONObject params = queryObject.getJSONObject("params");
 			level = params.getString("level");
 			protocal = params.getString("protocal");
 			startPid = params.getLong("stpid");
@@ -102,43 +97,8 @@ public class QueryTask implements Runnable {
 
 			if (level == null || protocal == null || startPid == 0
 					|| endPid == 0 || topN <= 0) {// 如果参数有问题 报错
-				// out.println("wrong params");
 				out.println(new JSONArray());
 				return;
-			}
-
-			int startHour = Utils.pid2HourOfYear(startPid);
-			int endHour = Utils.pid2HourOfYear(endPid);
-
-			whereCondition = " hour>=" + startHour + " and hour<=" + endHour
-					+ " and pid >= " + startPid + " and pid <=" + endPid;
-			// 提取port
-			if (!"all".equals(protocal)) {
-				String portCondition = "";
-				ArrayList<Integer> ports = ConfigData
-						.getPortStrByProtocal(protocal);
-
-				if (ports == null || ports.size() == 0) {// 当配置文件没接到或者配置中端口——协议映射没给用传统方式
-					System.out.println("ports for " + protocal
-							+ " cannot be found!");
-				} else {
-					int portLen = ports.size();
-					portCondition = "(" + ports.get(0);
-
-					for (int i = 1; i < portLen; i++) {
-						portCondition += "," + ports.get(i);
-					}
-
-					portCondition += ") ";
-					if ("other".equals(protocal)) {
-						whereCondition += " and srcPort not in "
-								+ portCondition + " and dstPort not in "
-								+ portCondition;
-					} else {
-						whereCondition += " and (srcPort in " + portCondition
-								+ " or dstPort in " + portCondition + ") ";
-					}
-				}
 			}
 		} catch (JSONException e1) {
 			e1.printStackTrace();
@@ -146,33 +106,69 @@ public class QueryTask implements Runnable {
 			return;
 		}
 
-		String tailCondition = " group by srcIP, dstIP,srcPort,dstPort,input,protocal,tos order by byte desc limit "
-				+ topN + ";";
+		// 判断查询表数目
+		long spid = startPid / 10000;
+		long epid = endPid / 10000;
+		String condition = "";
 
-		if (src == null && dst == null) {
-			sql = selectStr + whereCondition + tailCondition;
-		} else if (src != null && dst != null) {
-			long srcLong = IPTranslator.calIPtoLong(src);
-			String srcCondition = (level.equals("ip") ? " srcIP="
-					: " srcPrefix=") + srcLong;
-
-			long dstLong = IPTranslator.calIPtoLong(dst);
-			String dstCondition = (level.equals("ip") ? " dstIP="
-					: " dstPrefix=") + dstLong;
-
-			sql = selectStr + whereCondition + " and " + srcCondition + " and "
-					+ dstCondition + tailCondition;// 这里需求待确认
-		} else {
-			// out.println("wrong params");
+		if ((src == null && dst == null)
+				|| (src.length() == 0 && dst.length() == 0)) {
 			out.println(new JSONArray());
 			return;
 		}
+
+		if (src.length() != 0) {
+			condition = " and "
+					+ ((level.equals("ip") ? " srcIP=" : " srcPrefix=") + IPTranslator
+							.calIPtoLong(src));
+		}
+
+		if (dst.length() != 0) {
+			condition += " and "
+					+ ((level.equals("ip") ? " dstIP=" : " dstPrefix=") + IPTranslator
+							.calIPtoLong(dst));
+		}
+
+		String selectStr = "select bytes,srcIP, dstIP,srcPort,dstPort, path, protocal,input,tos,routerIp,srcMask,dstMask,srcAS,dstAS from ";
+		condition += getPortCondition(protocal);
+		String subTable = "";
+		String whereCondition = "";
+		String table1 = "netflow" + spid;
+		String table2 = "netflow" + (spid + 1);
+		String table3 = "netflow" + epid;
+
+		if (spid == epid) {// 一张表内
+			int startHour = Utils.pid2HourOfYear(startPid);
+			int endHour = Utils.pid2HourOfYear(endPid);
+			subTable = table1;
+			whereCondition = " where hour>=" + startHour + " and hour<="
+					+ endHour + " and pid >= " + startPid + " and pid <="
+					+ endPid + condition;
+		} else if ((spid + 1) == epid) {// 两张表
+			subTable = " ((" + selectStr + table1 + " where pid>=" + startPid
+					+ condition + ") union all (" + selectStr + table3
+					+ " where pid<=" + endPid + condition + ")) as subTable ";
+		} else if ((spid + 2) == epid) {// 三张表
+			subTable = " ((" + selectStr + table1 + " where pid>=" + startPid
+					+ condition + ") union all (" + selectStr + table2
+					+ " where " + condition.trim().substring(4)
+					+ ") union all (" + selectStr + table3 + " where pid<="
+					+ endPid + condition + ")) as subTable ";
+		} else {// 只支持两天范围内数据查询
+			out.println(new JSONArray());
+			return;
+		}
+
+		String otherCondition = " group by srcIP, dstIP,srcPort,dstPort,protocal order by byte desc limit "
+				+ topN + ";";
+
+		selectStr = "select sum(bytes) as byte,srcIP, dstIP,srcPort,dstPort, path, protocal,input,tos,routerIp,srcMask,dstMask,srcAS,dstAS from ";
+		String sql = selectStr + subTable + whereCondition + otherCondition;
 
 		System.out.println(sql);
 		ResultSet result = DBOperator.queryFlow(sql);
 
 		if (result == null) {
-			// out.println("query error");
 			out.println(new JSONArray());
 			return;
 		}
@@ -258,8 +254,8 @@ public class QueryTask implements Runnable {
 		long pid = params.getLong("pid");
 		String routerA = params.getString("routerA");
 		String routerB = params.getString("routerB");
-		String selectStr = "select sum(bytes) as byte,srcIP, dstIP,srcMask,dstMask,srcAS,dstAS,path from netflow where pid="
-				+ pid;
+		String selectStr = "select sum(bytes) as byte,srcIP, dstIP,srcMask,dstMask,srcAS,dstAS,path from netflow"
+				+ (pid / 10000) + " where pid=" + pid;
 		String tailCondition = " order by sum(bytes) desc limit " + topN + ";";
 		String groupCondition = " group by srcIP, dstIP ";
 		String sql = selectStr + " and path like '%" + routerA + "%" + routerB
@@ -323,15 +319,12 @@ public class QueryTask implements Runnable {
 
 		String ipA = params.getString("ipA");
 		String ipB = params.getString("ipB");
-		String selectStr = "select sum(bytes) as byte,srcIP, dstIP,srcMask,dstMask,srcPort,dstPort,srcAS,dstAS,input,tos,path,protocal from netflow where pid="
-				+ pid;
+		String selectStr = "select sum(bytes) as byte,srcIP, dstIP,srcMask,dstMask,srcPort,dstPort,srcAS,dstAS,input,tos,path,protocal from netflow"
+				+ (pid / 10000) + " where pid=" + pid;
 		String tailCondition = " order by sum(bytes) desc " + ";";
-		// String groupCondition =
-		// " group by srcIP, dstIP, srcPort, dstPort, protocal,input,tos ";
-		String groupCondition = "";
+
 		String sql = selectStr + " and srcIP=" + IPTranslator.calIPtoLong(ipA)
-				+ " and dstIP=" + IPTranslator.calIPtoLong(ipB)
-				+ groupCondition + tailCondition;
+				+ " and dstIP=" + IPTranslator.calIPtoLong(ipB) + tailCondition;
 
 		System.out.println(sql);
 		ResultSet result = DBOperator.queryFlow(sql);
@@ -358,51 +351,17 @@ public class QueryTask implements Runnable {
 		String protocal = params.getString("protocal");
 		String routerA = params.getString("routerA");
 		String routerB = params.getString("routerB");
-		String selectStr = "select bytes as byte,srcIP, dstIP,srcMask,dstMask,srcPort,dstPort,srcAS,dstAS,input,tos,path,protocal from netflow where pid="
-				+ pid;
-
-		String groupCondition = "";
-
-		if (!"all".equals(protocal)) {
-			String portCondition = "";
-			ArrayList<Integer> ports = ConfigData
-					.getPortStrByProtocal(protocal);
-
-			if (ports == null || ports.size() == 0) {// 当配置文件没接到或者配置中端口——协议映射没给用传统方式
-				System.out.println("ports for " + protocal
-						+ " cannot be found!");
-			} else {
-				int portLen = ports.size();
-				portCondition = "(" + ports.get(0);
-
-				for (int i = 1; i < portLen; i++) {
-					portCondition += "," + ports.get(i);
-				}
-
-				portCondition += ") ";
-				if ("other".equals(protocal)) {
-					groupCondition = " and srcPort not in " + portCondition
-							+ " and dstPort not in " + portCondition;
-				} else {
-					groupCondition = " and (srcPort in " + portCondition
-							+ " or dstPort in " + portCondition + ") ";
-				}
-			}
-		}
-
-		// ArrayList<Integer> ports = new ArrayList<Integer>();
-		// ports.add(8080);
-		// ports.add(80);
-
+		String selectStr = "select bytes as byte,srcIP, dstIP,srcMask,dstMask,srcPort,dstPort,srcAS,dstAS,input,tos,path,protocal from netflow"
+				+ (pid / 10000) + " where pid=" + pid;
+		String portCondition = getPortCondition(protocal);
 		String tailCondition = " order by bytes desc limit " + topN + ";";
 		String sql = selectStr + " and path like '%" + routerA + "%" + routerB
-				+ "%' " + groupCondition + tailCondition;
+				+ "%' " + portCondition + tailCondition;
 
 		System.out.println(sql);
 		ResultSet result = DBOperator.queryFlow(sql);
 
 		if (result == null) {
-			// out.println("query error");
 			out.println(new JSONArray());
 			return;
 		}
@@ -410,6 +369,38 @@ public class QueryTask implements Runnable {
 		String resultStr = getResultJson(result);
 		out.println(resultStr.toString());
 		System.out.println(resultStr.toString());
+	}
+
+	private String getPortCondition(String protocal) {
+		// 提取port
+		if ("all".equals(protocal)) {
+			return "";
+		}
+
+		String portList = "";
+		String portCondition = "";
+		ArrayList<Integer> ports = ConfigData.getPortStrByProtocal(protocal);
+
+		if (ports == null || ports.size() == 0) {// 当配置文件没接到或者配置中端口——协议映射没给用传统方式
+			System.out.println("ports for " + protocal + " cannot be found!");
+		} else {
+			int portLen = ports.size();
+			portList = "(" + ports.get(0);
+
+			for (int i = 1; i < portLen; i++) {
+				portList += "," + ports.get(i);
+			}
+
+			portList += ") ";
+			if ("other".equals(protocal)) {
+				portCondition += " and srcPort not in " + portList
+						+ " and dstPort not in " + portList;
+			} else {
+				portCondition += " and (srcPort in " + portList
+						+ " or dstPort in " + portList + ") ";
+			}
+		}
+		return portCondition;
 	}
 
 	private void closeTask() {

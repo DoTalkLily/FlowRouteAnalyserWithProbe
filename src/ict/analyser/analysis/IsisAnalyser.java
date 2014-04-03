@@ -26,7 +26,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
@@ -37,15 +36,13 @@ import java.util.logging.Logger;
  * @author 25hours
  * @version 1.0, 2012-11-25
  */
-public class IsisAnalyser implements Runnable {
+public class IsisAnalyser extends Thread {
 	private long period = 0;
 	private IsisTopo topo = null;
 	private Lock flowLock = null;
-	private Lock completeLock = null;
 	private boolean isPreCal = false;
-	private boolean completed = false;
 	private DBOperator dbWriter = null;
-	private Condition completeCon = null;// 锁相关：设置等待唤醒，相当于wait/notify
+	private List<Long> routerIds = null;
 	private List<Netflow> netflows = null;// netflow接收模块分析并聚合后得到的报文对象列表
 	private RouteAnalyser processer = null;
 	private ArrayList<Flow> allFlowRoute = null;// 全部flow的route
@@ -57,18 +54,18 @@ public class IsisAnalyser implements Runnable {
 	 * 
 	 * @param mainProcesser
 	 */
-	public IsisAnalyser(RouteAnalyser analyser, boolean isPrecal) {
+	public IsisAnalyser(RouteAnalyser analyser, IsisTopo topo,
+			boolean isPrecal, List<Netflow> netflows) {
+		this.topo = topo;
 		this.isPreCal = isPrecal;
 		this.processer = analyser;
 		this.period = processer.getPeriod();
-		this.topo = processer.getIsisTopo();
 
 		if (!isPrecal) { // 如果是计算流量路径需要额外初始化的变量
+			this.netflows = netflows;
 			this.dbWriter = new DBOperator();
 			this.flowLock = new ReentrantLock();
-			this.completeLock = new ReentrantLock();
 			this.allFlowRoute = new ArrayList<Flow>();
-			this.completeCon = completeLock.newCondition();
 			this.mapLidTlink = new HashMap<Integer, TrafficLink>();
 		}
 	}
@@ -91,16 +88,8 @@ public class IsisAnalyser implements Runnable {
 	}
 
 	public void calTopoRoute() {
-		long srcId = 0;
-
-		while (true) {
-			srcId = this.processer.getOneRouterId();
-
-			if (srcId == -1) {
-				break;
-			}
-
-			SPFCompute(srcId);
+		for (int i = 0, len = this.routerIds.size(); i < len; i++) {
+			SPFCompute(this.routerIds.get(i));
 		}
 	}
 
@@ -112,62 +101,51 @@ public class IsisAnalyser implements Runnable {
 		}
 	}
 
-	private void calL2Flow() {
-		Path path = null;
-		Netflow netflow;// 临时变量
-		int resultType;
-		long srcRouterId;
-		long dstRouterId;
-		int flowDirection;
-		boolean srcInside, dstInside;
-		int flowCount = this.netflows.size();// 得到聚合后的netflow列表的条目总数
+	boolean srcIn, dstIn;
 
+	private void calL2Flow() {
+		int resultType;
+		Path path = null;
+		Netflow netflow = null;// 临时变量
+		long srcRouterId, dstRouterId;
 		Object[] dstInfo;
 
-		for (int i = 0; i < flowCount; i++) { // 开始遍历，逐条分析路径
-			srcRouterId = 0;
-			dstRouterId = 0;
-			srcInside = false;
-			dstInside = false;
+		for (int i = 0, flowCount = this.netflows.size(); i < flowCount; i++) { // 开始遍历，逐条分析路径
 			// 开始分析
 			netflow = this.netflows.get(i);// 取得一条流
 
-			// 定位源路由器id
-			srcRouterId = this.topo.getBrIdByIp(netflow.getRouterIP());// 首先根据路由器ip判断源是否是l1/l2路由器
+			if (netflow == null) {
+				continue;
+			}
+
+			srcIn = true;
+			dstIn = true;
+			srcRouterId = getSrcId(netflow.getRouterIP(), netflow.getSrcAddr(),
+					netflow.getSrcMask());
 
 			if (srcRouterId == 0) {
-				srcRouterId = this.topo.getSrcRidByPrefix(netflow.getSrcAddr(),
-						netflow.getSrcMask());
-
-				if (srcRouterId == 0) {
-					netflow.printDetail();
-					debug(netflow.getSrcAddr(), 0);
-					continue;
-				}
-				srcInside = true;
+				debug(netflow.getSrcAddr(), 0);
+				continue;
 			}
-			// 定位结束
 
 			// 定位目的路由器
-			dstInfo = this.topo.getRidByPrefixLevel2(netflow.getDstAddr(),
-					netflow.getDstMask());
+			dstInfo = this.topo.getRidByPrefix(netflow.getDstAddr(),
+					netflow.getDstMask(), Constant.LEVEL2);
 
 			if (dstInfo == null) {
-				netflow.printDetail();
 				debug(0, netflow.getDstAddr());
 				continue;
 			}
 
 			resultType = (Integer) dstInfo[0];
 
-			if (resultType == 1) {// 在stub中
-				dstInside = true;
+			if (resultType == Constant.FOUND_IN_REACH) {// 在stub中
+				dstIn = false;
 			}
 
 			dstRouterId = (Long) dstInfo[1];
 
-			if (dstRouterId == 0) {
-				netflow.printDetail();
+			if (dstRouterId == 0 || dstRouterId == srcRouterId) {
 				debug(0, netflow.getDstAddr());
 				continue;
 			}
@@ -175,25 +153,21 @@ public class IsisAnalyser implements Runnable {
 			path = processer.getPathByIds(srcRouterId + "_" + dstRouterId);
 
 			if (path == null) {
-				netflow.printDetail();
 				debug(srcRouterId, dstRouterId);
 				continue;
 			}
 
-			debug(path);
-			// 判断流向
-			if (srcInside) {
-				flowDirection = dstInside ? Constant.INTERNAL_FLOW
-						: Constant.OUTBOUND_FLOW;
-			} else {
-				flowDirection = dstInside ? Constant.INBOUND_FLOW
-						: Constant.TRANSIT_FLOW;
+			if (srcIn && dstIn) {
+				this.processer.updateStatics(netflow, Constant.INTERNAL_FLOW);
+			} else if (srcIn && !dstIn) {
+				this.processer.updateStatics(netflow, Constant.OUTBOUND_FLOW);
+			} else if (!srcIn && dstIn) {
+				this.processer.updateStatics(netflow, Constant.INBOUND_FLOW);
 			}
-
-			insertFlow(netflow, path, flowDirection);
+			debug(path);
+			insertFlow(netflow, path);
 		}// end of for
 			// 所有流量都分析完了
-		sendCompleteSignal();// 通知主线程已经分析完了
 
 		if (this.allFlowRoute.size() > 0) {
 			writeToDB();// 存入数据库
@@ -201,54 +175,40 @@ public class IsisAnalyser implements Runnable {
 	}
 
 	public void calL1Flow() {
-		Path path = null;
-		Netflow netflow;// 临时变量
 		int resultType;
-		long srcRouterId;
-		long dstRouterId;
-		int flowDirection;
-		boolean srcInside, dstInside;
-		int flowCount = this.netflows.size();// 得到聚合后的netflow列表的条目总数
-
+		Path path = null;
+		Netflow netflow = null;// 临时变量
+		long srcRouterId = 0, dstRouterId = 0;
 		Object[] dstInfo;
 
-		for (int i = 0; i < flowCount; i++) { // 开始遍历，逐条分析路径
-			srcRouterId = 0;
-			dstRouterId = 0;
-			srcInside = false;
-			dstInside = false;
-			// 开始分析
+		for (int i = 0, flowCount = this.netflows.size(); i < flowCount; i++) { // 开始遍历，逐条分析路径
 			netflow = this.netflows.get(i);// 取得一条流
 
-			// 定位源路由器id
-			srcRouterId = this.topo.getBrIdByIp(netflow.getRouterIP());// 首先根据路由器ip判断源是否是l1/l2路由器
+			if (netflow == null) {
+				continue;
+			}
+
+			srcIn = true;
+			dstIn = true;
+			srcRouterId = getSrcId(netflow.getRouterIP(), netflow.getSrcAddr(),
+					netflow.getSrcMask());
 
 			if (srcRouterId == 0) {
-				srcRouterId = this.topo.getSrcRidByPrefix(netflow.getSrcAddr(),
-						netflow.getSrcMask());
-
-				if (srcRouterId == 0) {
-					netflow.printDetail();
-					debug(netflow.getSrcAddr(), 0);
-					continue;
-				}
-				srcInside = true;
+				debug(netflow.getSrcAddr(), 0);
+				continue;
 			}
-			// 定位结束
 
 			// 定位目的路由器
-			dstInfo = this.topo.getRidByPrefixLevel1(netflow.getDstAddr(),
-					netflow.getDstMask());
+			dstInfo = this.topo.getRidByPrefix(netflow.getDstAddr(),
+					netflow.getDstMask(), Constant.LEVEL1);
 			resultType = (Integer) dstInfo[0];
 
-			switch (resultType) {
-			case 1: // 在stub中
-				dstInside = true;
+			if (resultType == Constant.IN_STUB) {
 				dstRouterId = (Long) dstInfo[1];
 				path = processer.getPathByIds(srcRouterId + "_" + dstRouterId);
-				break;
-			case 2:// 都配置重分发的情况要计算源到l1/l2路由器距离
-					// 与重分发报文中宣告的metric之和最小的路径（即整条链路metric最短路径）
+			} else if (resultType == Constant.FOUND_IN_REACH) {
+				// 都配置重分发的情况要计算源到l1/l2路由器距离
+				// 与重分发报文中宣告的metric之和最小的路径（即整条链路metric最短路径）
 				@SuppressWarnings("unchecked")
 				LinkedList<Reachability> reaches = (LinkedList<Reachability>) dstInfo[1];
 				Iterator<Reachability> iterator = reaches.iterator();
@@ -271,14 +231,13 @@ public class IsisAnalyser implements Runnable {
 						path = tmpPath;
 					}
 				}
-
-				break;
-			default:// 如果没有渗透 则得到所有l1/l2路由器id列表，取源到这个id列表之间的最短路径
+			} else {
+				// 如果没有渗透 则得到所有l1/l2路由器id列表，取源到这个id列表之间的最短路径
 				@SuppressWarnings("unchecked")
 				LinkedList<Long> brIds = (LinkedList<Long>) dstInfo[1];
 
 				Iterator<Long> iter = brIds.iterator();
-				min = Integer.MAX_VALUE;
+				int min = Integer.MAX_VALUE;
 				Path tmpPath;
 				long tmpId;
 
@@ -294,38 +253,44 @@ public class IsisAnalyser implements Runnable {
 					}
 				}
 
-				break;
 			}
 
-			if (path == null) {
+			if (path == null || srcRouterId == dstRouterId) {
 				debug(srcRouterId, dstRouterId);
 				continue;
 			}
 
-			debug(path);
-			// 判断流向
-			if (srcInside) {
-				flowDirection = dstInside ? Constant.INTERNAL_FLOW
-						: Constant.OUTBOUND_FLOW;
-			} else {
-				flowDirection = dstInside ? Constant.INBOUND_FLOW
-						: Constant.TRANSIT_FLOW;
+			if (srcIn && dstIn) {
+				this.processer.updateStatics(netflow, Constant.INTERNAL_FLOW);
+			} else if (srcIn && !dstIn) {
+				this.processer.updateStatics(netflow, Constant.OUTBOUND_FLOW);
+			} else if (!srcIn && dstIn) {
+				this.processer.updateStatics(netflow, Constant.INBOUND_FLOW);
 			}
 
-			insertFlow(netflow, path, flowDirection);
+			debug(path);
+			insertFlow(netflow, path);
 		}// end of for
-			// 所有流量都分析完了
-		sendCompleteSignal();// 通知主线程已经分析完了
 
 		if (this.allFlowRoute.size() > 0) {
 			writeToDB();// 存入数据库
 		}
 	}
 
+	public long getSrcId(long routerIp, long ip, byte mask) {
+		long rid = this.topo.getSrcRidByPrefix(ip, mask);
+
+		if (rid != 0) {
+			return rid;
+		}
+
+		srcIn = false;
+		return this.topo.getBrIdByIp(routerIp);// 根据路由器ip判断进入这个Area的l1/l2路由器
+	}
+
 	// 这里有个优化，将每个源的每次spf算法结束后的最优结构和candidate保存起来，这样下一次计算时，如果源曾经计算过，
 	// 但是之前计算过程中没计算到将本次的目的id加入到spf中（如果加过了，上面foundpath已经缓存直接能找到，无需再spf了）则得到本地保存上一次计算快照（spfmap
 	// 和candidatemap）在此基础上继续计算
-
 	public void SPFCompute(long srcId) {// 已改
 		if (srcId == -1) {
 			logger.warning("src router id is invalid!");
@@ -438,7 +403,7 @@ public class IsisAnalyser implements Runnable {
 		return bestCandidate;
 	}
 
-	public void insertFlow(Netflow netflow, Path path, int direction) {
+	public void insertFlow(Netflow netflow, Path path) {
 		ArrayList<Link> links = path.getLinks();
 		Link link = null;
 		int size = links.size();
@@ -449,7 +414,7 @@ public class IsisAnalyser implements Runnable {
 			linkId = link.getLinkId();
 			setMapLidTraffic(linkId, netflow.getdOctets(), netflow.getDstPort());
 		}
-		Flow flow = new Flow(netflow, path, direction);
+		Flow flow = new Flow(netflow, path);
 		this.allFlowRoute.add(flow);
 	}
 
@@ -481,35 +446,15 @@ public class IsisAnalyser implements Runnable {
 		}
 	}
 
-	public void sendCompleteSignal() {
-		this.completeLock.lock();
-		try {
-			this.completed = true;
-			this.completeCon.signal();
-		} finally {
-			this.completeLock.unlock();
-		}
-	}
-
-	public void completedSignal() {
-		completeLock.lock();
-		try {
-			while (!this.completed) {
-				this.completeCon.await();
-			}
-			this.completed = false;
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		} finally {
-			this.completeLock.unlock();
-		}
-	}
-
 	private void writeToDB() {
 		this.flowLock.lock();
 		this.dbWriter.writeFlowToDB(this.period, this.allFlowRoute);
 		this.flowLock.unlock();
 		System.out.println("wrote to db done!!");
+	}
+
+	public void setRouterIdsToPrecal(List<Long> routerIds) {
+		this.routerIds = routerIds;
 	}
 
 	/**

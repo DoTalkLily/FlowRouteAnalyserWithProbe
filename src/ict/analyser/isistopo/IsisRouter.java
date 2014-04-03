@@ -23,15 +23,10 @@ import java.util.ArrayList;
  * @version 1.0, 2012-10-18
  */
 public class IsisRouter {
-
 	private long id = 0;// 路由器id
-
 	private int level = 2;// 默认是level 2
-
 	private ArrayList<Long> ips = null;// 接口ip列表
-
 	private ArrayList<Link> links = null;// 链路列表
-
 	private ArrayList<Long> neighborIds = null;// 邻居id列表，与link 一 一对应
 
 	public IsisRouter() {

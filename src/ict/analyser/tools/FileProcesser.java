@@ -29,6 +29,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 import org.json.JSONArray;
@@ -39,7 +40,6 @@ public class FileProcesser {
 	private static long pid = 0;
 	private static boolean isTopoChanged = true;// 标记本周期拓扑是否发生改变
 	private static boolean isOuterChanged = true;// 标记本周期bgp信息是否发生改变
-
 	private static Logger logger = Logger.getLogger(FileProcesser.class
 			.getName());// 注册一个logger
 
@@ -67,7 +67,7 @@ public class FileProcesser {
 			String protocal = jObject.getString("protocol");
 			String globalAnalysisIP = jObject.getString("globalAnalysisIP");
 
-			if (protocal != null && interval > 1 && globalAnalysisIP != null
+			if (protocal != null && interval >= 1 && globalAnalysisIP != null
 					&& globalAnalysisPort > 0 && inAdvance > 0 && topN > 0
 					&& samplingRate > 0) {
 				configData.setTopN(topN);
@@ -339,9 +339,8 @@ public class FileProcesser {
 				sysId = node.getString("sysId");
 				rid = IPTranslator.calSysIdtoLong(sysId);
 				JSONArray ipArr = node.getJSONArray("ip");
-				int ipCount = ipArr.length();
 
-				for (int j = 0; j < ipCount; j++) {
+				for (int j = 0, ipCount = ipArr.length(); j < ipCount; j++) {
 					ipStr = ipArr.getString(j);
 
 					if (ipStr != null) {
@@ -411,15 +410,25 @@ public class FileProcesser {
 					nRouterId = neighbor.getString("nRouterId");
 					metric = neighbor.getInt("metric");
 
+					// if (linkId != 0 && area != null && interfaceIP != null
+					// && mask != null && nRouterId != null) {//
+					// 这里懒得改拓扑文件错误，修改下代码
 					if (linkId != 0 && area != null && interfaceIP != null
-							&& mask != null && nRouterId != null) {
+							&& nRouterId != null) {
 						ip = IPTranslator.calIPtoLong(interfaceIP);
 						link = new Link();
 						link.setMyId(rid);
 						link.setLinkId(linkId); // id
 						link.setArea(area); // area
 						link.setMyInterIp(ip); // interfaceIp
-						link.setMask(IPTranslator.calIPtoLong(mask)); // mask
+
+						if (mask == null || mask.length() == 0) {// 这里懒得改拓扑文件错误，修改下代码
+							link.setMask(IPTranslator
+									.calIPtoLong("255.255.255.0")); // mask
+						} else {
+							link.setMask(IPTranslator.calIPtoLong(mask)); // mask
+						}
+
 						link.setNeighborId(IPTranslator.calIPtoLong(nRouterId)); // nRouterId
 						link.setMetric(metric); // metric
 						router.addArea(area);
@@ -523,9 +532,8 @@ public class FileProcesser {
 		try {
 			// 解析stub 过后这里考虑去冗余代码
 			JSONArray normal = reachInfo.getJSONArray("normal");// 这里调用函数检验过不是空
-			int count = normal.length();
 
-			for (int i = 0; i < count; i++) {
+			for (int i = 0, count = normal.length(); i < count; i++) {
 				reachObj = normal.getJSONObject(i);
 				sysIdStr = reachObj.getString("sysId");
 
@@ -539,10 +547,9 @@ public class FileProcesser {
 					continue;
 				}
 
-				int reachCount = reachArr.length();
 				sysId = IPTranslator.calSysIdtoLong(sysIdStr);
 
-				for (int j = 0; j < reachCount; j++) {
+				for (int j = 0, reachCount = reachArr.length(); j < reachCount; j++) {
 					reachItem = reachArr.getJSONObject(j);
 					metric = reachItem.getInt("metric");
 					prefixStr = reachItem.getString("prefix");
@@ -558,9 +565,8 @@ public class FileProcesser {
 
 			// 开始解析l1/l2路由器宣告的reachability
 			JSONArray hybrid = reachInfo.getJSONArray("hybrid");// 这里调用函数检验过不是空
-			count = hybrid.length();
 
-			for (int i = 0; i < count; i++) {
+			for (int i = 0, count = hybrid.length(); i < count; i++) {
 				reachObj = normal.getJSONObject(i);
 				sysIdStr = reachObj.getString("sysId");
 
@@ -574,10 +580,9 @@ public class FileProcesser {
 					continue;
 				}
 
-				int reachCount = reachArr.length();
 				sysId = IPTranslator.calSysIdtoLong(sysIdStr);
 
-				for (int j = 0; j < reachCount; j++) {
+				for (int j = 0, reachCount = reachArr.length(); j < reachCount; j++) {
 					reachItem = reachArr.getJSONObject(j);
 					metric = reachItem.getInt("metric");
 					prefixStr = reachItem.getString("prefix");
@@ -757,7 +762,8 @@ public class FileProcesser {
 	}
 
 	public static String writeResult(HashMap<Integer, TrafficLink> mapLidTlink,
-			HashMap<Long, StatisticItem> allStatistics, int interval) {
+			ConcurrentHashMap<Long, StatisticItem> allStatistics, int interval,
+			long pid) {
 		String path = "TrafficTopoResult_" + pid + ".json";
 		int id = 0;
 		FileWriter fw = null;
@@ -903,7 +909,7 @@ public class FileProcesser {
 				}
 
 				linkObj.put("id", id);
-				linkObj.put("total", toAdd.getTotal());
+				linkObj.put("total", toAdd.getTotal() * ConfigData.SAMPLE_RATE);// 链路上的流量*采样比
 				mapProtocalBytes = toAdd.getProtocalBytes();
 
 				if (mapProtocalBytes.size() == 0) {// 如果链路上没有任何流量流过，就不加protocal和bytes数组

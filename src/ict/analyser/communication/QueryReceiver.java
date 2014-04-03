@@ -8,7 +8,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-public class QueryReceiver extends Thread {
+public class QueryReceiver implements Runnable {
 	private static int port = 3333;// 服务器监听的端口号
 	private ServerSocket server = null;
 

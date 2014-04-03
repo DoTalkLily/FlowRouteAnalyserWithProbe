@@ -2,6 +2,7 @@ package ict.analyser.netflow;
 
 import ict.analyser.tools.IPTranslator;
 import ict.analyser.tools.Utils;
+import ict.analyser.tools.Variation;
 
 /*
  V5 Flow 结构     gengxin V9
@@ -55,7 +56,7 @@ import ict.analyser.tools.Utils;
 
  */
 
-public class Netflow {
+public class Netflow implements Cloneable {
 	long routerIP = 0;
 	long srcRouter = 0;// 源路由器id
 	long dstRouter = 0;// 目的路由器id
@@ -74,61 +75,225 @@ public class Netflow {
 	long last = 0;
 	int srcPort = -1;
 	int dstPort = -1;
-
-	short tcpFlags = 0;
-	short proc = -1;
-	short tos = 0;
-
+	byte tcpFlags = 0;
+	byte proc = -1;
+	byte tos = 0;
 	int srcAs = -1;
 	int dstAs = -1;
 	byte srcMask = 0;
 	byte dstMask = 0;
 
-	// byte protocol = 0;// === 0C
+	public Netflow(long routerIp, byte[] buf, int off, long unix_secs) {
+		this.version = 5;
+		this.routerIP = routerIp;
+		this.unix_secs = unix_secs;
 
-	public Netflow(byte[] buf) {
-		this.routerIP = Utils.byte2long(buf, 0, 4);
-		this.version = (int) Utils.byte2long(buf, 4, 4);
-		this.unix_secs = Utils.byte2long(buf, 8, 4);
-		this.srcAddr = Utils.byte2long(buf, 12, 4);
-		this.dstAddr = Utils.byte2long(buf, 16, 4);
-		this.nexthop = Utils.byte2long(buf, 20, 4);
-		this.input = Utils.byte2int(buf, 24);
-		this.output = Utils.byte2int(buf, 26);
-		this.dPkts = Utils.byte2long(buf, 28, 4);
-		this.dOctets = Utils.byte2long(buf, 32, 4);
-		this.first = Utils.byte2long(buf, 36, 4);
-		this.last = Utils.byte2long(buf, 40, 4);
-		this.srcPort = Utils.byte2int(buf, 44);
-		this.dstPort = Utils.byte2int(buf, 46);
-		this.tcpFlags = Utils.byte2short(buf, 48);
-		this.proc = Utils.byte2short(buf, 50);
-		this.tos = Utils.byte2short(buf, 52);
-		this.srcMask = buf[54];
-		this.dstMask = buf[55];
-		this.srcAs = (int) Utils.byte2long(buf, 56, 4);
-		this.dstAs = (int) Utils.byte2long(buf, 60, 4);
-
-		this.dOctets *= 1000;
+		this.srcAddr = Utils.byte2long(buf, off, 4);
+		this.dstAddr = Utils.byte2long(buf, off + 4, 4);
+		this.nexthop = Utils.byte2long(buf, off + 8, 4);
+		this.input = Utils.byte2int(buf, off + 12);
+		this.output = Utils.byte2int(buf, off + 14);
+		this.dPkts = Utils.byte2long(buf, off + 16, 4);
+		this.dOctets = Utils.byte2long(buf, off + 20, 4);
+		this.first = Utils.byte2long(buf, off + 24, 4);
+		this.last = Utils.byte2long(buf, off + 28, 4);
+		this.srcPort = Utils.byte2int(buf, off + 32);
+		this.dstPort = Utils.byte2int(buf, off + 34);
+		this.tcpFlags = buf[off + 37];
+		this.proc = buf[off + 38];
+		this.tos = buf[off + 39];
+		this.srcAs = Utils.byte2int(buf, off + 40);
+		this.dstAs = Utils.byte2int(buf, off + 42);
+		this.srcMask = buf[off + 44];
+		this.dstMask = buf[off + 45];
 
 		this.srcPrefix = IPTranslator.calLongPrefix(this.srcAddr, this.srcMask);
 		this.dstPrefix = IPTranslator.calLongPrefix(this.dstAddr, this.dstMask);
-
-		// if (this.dstPort == 21 || this.dstPort == 23 || this.dstPort == 80)
-		// {// 只识别ftp
-		// // telnet和http
-		// this.protocol = ((Integer) this.dstPort).byteValue();
-		// }
-
-		if (this.dPkts + this.dOctets <= 0) {
-			System.err.println("dPkts and dOctets is illegal");
-		}
-
 	}
 
-	// add
-	// private byte[] temp ;
-	// private byte[] srctemp;
+	public static final int V9_Header_Size = 20;
+
+	public Netflow(long routerIp, final byte[] buf, int off, Template template,
+			long unix_secs) {
+		this.version = 9;
+		this.unix_secs = unix_secs;
+		this.routerIP = routerIp;
+
+		if (buf.length < template.getTypeOffset(-1)) {
+			System.err.println("invalid packets!");
+			return;
+		}
+
+		int offset = template.getTypeOffset(FieldDefinition.IPV4_SRC_ADDR);
+		int length = template.getTypeLen(FieldDefinition.IPV4_SRC_ADDR);
+
+		if (offset >= 0 && length > 0) {
+			this.srcAddr = Utils.to_number(buf, off + offset, length);
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.IPV4_DST_ADDR);
+		length = template.getTypeLen(FieldDefinition.IPV4_DST_ADDR);
+
+		if (offset >= 0 && length > 0) {
+			this.dstAddr = Utils.to_number(buf, off + offset, length);
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.IPV4_NEXT_HOP);
+		length = template.getTypeLen(FieldDefinition.IPV4_NEXT_HOP);
+
+		if (offset >= 0 && length > 0) {
+			this.nexthop = Utils.to_number(buf, off + offset, length);
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.INPUT_SNMP);
+		length = template.getTypeLen(FieldDefinition.INPUT_SNMP);
+
+		if (offset >= 0 && length > 0) {
+			this.input = (int) Utils.to_number(buf, off + offset, length);
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.OUTPUT_SNMP);
+		length = template.getTypeLen(FieldDefinition.OUTPUT_SNMP);
+
+		if (offset >= 0 && length > 0) {
+			this.output = (int) Utils.to_number(buf, off + offset, length);
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.InPKTS_32);
+		length = template.getTypeLen(FieldDefinition.InPKTS_32);
+
+		if (offset >= 0 && length > 0) {
+			this.dPkts = Utils.to_number(buf, off + offset, length)
+					* template.getSamplingRate();
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.InBYTES_32);
+		length = template.getTypeLen(FieldDefinition.InBYTES_32);
+
+		if (offset >= 0 && length > 0) {
+			this.dOctets = Utils.to_number(buf, off + offset, length)
+					* template.getSamplingRate();
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.FIRST_SWITCHED);
+		length = template.getTypeLen(FieldDefinition.FIRST_SWITCHED);
+
+		if (offset >= 0 && length > 0) {
+			this.first = Utils.to_number(buf, off + offset, length);
+
+			if (!Variation.getInstance().judgeVary(first)) {
+				System.err.println("Time mismatch!");
+			}
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.LAST_SWITCHED);
+		length = template.getTypeLen(FieldDefinition.LAST_SWITCHED);
+
+		if (offset >= 0 && length > 0) {
+			try {
+				this.last = Utils.to_number(buf, off + offset, length);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.L4_SRC_PORT);
+		length = template.getTypeLen(FieldDefinition.L4_SRC_PORT);
+
+		if (offset >= 0 && length > 0) {
+			this.srcPort = (int) Utils.to_number(buf, off + offset, length);
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.L4_DST_PORT);
+		length = template.getTypeLen(FieldDefinition.L4_DST_PORT);
+
+		if (offset >= 0 && length > 0) {
+			this.dstPort = (int) Utils.to_number(buf, off + offset, length);
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.TCP_FLAGS);
+		length = template.getTypeLen(FieldDefinition.TCP_FLAGS);
+
+		if (offset >= 0 && length > 0) {
+			this.tcpFlags = buf[off + offset];
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.PROT);
+		length = template.getTypeLen(FieldDefinition.PROT);
+
+		if (offset >= 0 && length > 0) {
+			this.proc = buf[off + offset];
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.SRC_TOS);
+		length = template.getTypeLen(FieldDefinition.SRC_TOS);
+
+		if (offset >= 0 && length > 0) {
+			this.tos = buf[off + offset];
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.SRC_AS);
+		length = template.getTypeLen(FieldDefinition.SRC_AS);
+
+		if (offset >= 0 && length > 0) {
+			this.srcAs = (int) Utils.to_number(buf, off + offset, length);
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.DST_AS);
+		length = template.getTypeLen(FieldDefinition.DST_AS);
+
+		if (offset >= 0 && length > 0) {
+			this.dstAs = (int) Utils.to_number(buf, off + offset, length);
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.SRC_MASK);
+		length = template.getTypeLen(FieldDefinition.SRC_MASK);
+
+		if (offset >= 0 && length > 0) {
+			this.srcMask = buf[off + offset];
+		}
+
+		offset = template.getTypeOffset(FieldDefinition.DST_MASK);
+		length = template.getTypeLen(FieldDefinition.DST_MASK);
+
+		if (offset >= 0 && length > 0) {
+			this.dstMask = buf[off + offset];
+		}
+
+		if (this.srcAddr != 0 || this.srcMask != 0) {
+			this.srcPrefix = IPTranslator.calLongPrefix(this.srcAddr,
+					this.srcMask);
+			this.dstPrefix = IPTranslator.calLongPrefix(this.dstAddr,
+					this.dstMask);
+		}
+
+		if (this.dPkts + this.dOctets <= 0) {
+			System.err.println("illegal packet num and doctets!");
+		}
+	}
+
+	public boolean equals(Netflow obj) {
+		if ((this.input == obj.input) && (this.srcAddr == obj.srcAddr)
+				&& (this.dstAddr == obj.dstAddr) && (this.proc == obj.proc)
+				&& (this.srcPort == obj.srcPort)
+				&& (this.dstPort == obj.dstPort) && (this.tos == obj.tos)) {
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	public String getKey() {
+		String key = this.srcAddr + "_" + this.dstAddr + "_" + this.srcPort
+				+ "_" + this.dstPort + "_" + this.proc;
+		return key;
+	}
+
+	@Override
+	public Object clone() throws CloneNotSupportedException {
+		return super.clone();
+	}
+
 	/**
 	 * @return Returns the routerIP.
 	 */
@@ -338,10 +503,18 @@ public class Netflow {
 
 	/**
 	 * 
+	 * 
+	 * @param getdOctets
+	 */
+	public void addOctets(long dOctets) {
+		this.dOctets += dOctets;
+	}
+
+	/**
+	 * 
 	 *
 	 */
 	public void printDetail() {
-
 		System.out.println(" flow detail  " + "router ip:"
 				+ IPTranslator.calLongToIp(routerIP) + " src router id:"
 				+ IPTranslator.calLongToIp(srcRouter) + "  dst router id:"

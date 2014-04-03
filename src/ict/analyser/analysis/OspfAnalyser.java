@@ -24,7 +24,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
@@ -35,15 +34,13 @@ import java.util.logging.Logger;
  * @author 25hours
  * @version 1.0, 2012-10-15
  */
-public class OspfAnalyser implements Runnable {
+public class OspfAnalyser extends Thread {
 	private long period = 0;// 周期id
 	private boolean isPreCal = false;
-	private boolean completed = false;
 	private OspfTopo topo = null;// 保存当前AS拓扑结构等数据
 	private Lock flowLock = null;
-	private Lock completeLock = null;
 	private DBOperator dbWriter = null;
-	private Condition completeCon = null;// 锁相关：设置等待唤醒，相当于wait/notify
+	private List<Long> routerIds = null;// 需要提前分析的路由器id列表
 	private List<Netflow> netflows = null;// flow接收模块分析并聚合后得到的报文对象列表
 	private RouteAnalyser processer = null;
 	private ArrayList<Flow> allFlowRoute = null;// 全部flow的路径
@@ -55,18 +52,18 @@ public class OspfAnalyser implements Runnable {
 	 * 
 	 * @param mainProcesser
 	 */
-	public OspfAnalyser(RouteAnalyser analyser, boolean isPrecal) {
+	public OspfAnalyser(RouteAnalyser analyser, OspfTopo topo,
+			boolean isPrecal, List<Netflow> netflows) {
+		this.topo = topo;
 		this.isPreCal = isPrecal;
 		this.processer = analyser;
 		this.period = analyser.getPeriod();
-		this.topo = analyser.getOspfTopo();
 
 		if (!isPrecal) { // 如果是计算流量路径需要额外初始化的变量
+			this.netflows = netflows;
 			this.dbWriter = new DBOperator();
 			this.flowLock = new ReentrantLock();
-			this.completeLock = new ReentrantLock();
 			this.allFlowRoute = new ArrayList<Flow>();
-			this.completeCon = completeLock.newCondition();
 			this.mapLidTlink = new HashMap<Integer, TrafficLink>();
 		}
 	}
@@ -89,76 +86,126 @@ public class OspfAnalyser implements Runnable {
 	}
 
 	public void calTopoRoute() {
-		long srcId = 0;
-
-		while (true) {
-			srcId = this.processer.getOneRouterId();
-
-			if (srcId == -1) {
-				break;
-			}
-
-			SPFCompute(srcId);
+		for (int i = 0, len = this.routerIds.size(); i < len; i++) {
+			SPFCompute(this.routerIds.get(i));
 		}
 	}
 
-	public void calFlowRoute() {
-		long srcAS = 0;
-		long dstAS = 0;
-		int flowDirection = 0;// 记录flow种类，internal:1,inbound:2,outbound:3,transit:4
-		long topoAS = this.topo.getAsNumber();
-		int flowCount = this.netflows.size();// 得到聚合后的netflow列表的条目总数
+	boolean srcIn, dstIn;
 
+	public void calFlowRoute() {
+		long srcRouterId = 0, dstRouterId = 0;
 		Netflow netflow = null;// 临时变量
 
-		for (int i = 0; i < flowCount; i++) { // 开始遍历，逐条分析路径
-			// 重置临时变量
-			flowDirection = 0;// 记录flow种类，internal:0,inbound:1,outbound:2,transit:3
-			// 开始分析
+		for (int i = 0, flowCount = this.netflows.size(); i < flowCount; i++) { // 开始遍历，逐条分析路径
 			netflow = this.netflows.get(i);// 取得一条流
-			srcAS = netflow.getSrcAs();// 源as号
-			dstAS = netflow.getDstAs();// 目的as号
-
-			if ((srcAS == 0 && dstAS == 0)
-					|| (srcAS == topoAS && dstAS == topoAS)) {// 如果as都是0
-																// 或者都等于拓扑文件中的as则为域内流量
-				// 如果源和目的设备所在的as号和当前as号相同，是域内flow
-				flowDirection = Constant.INTERNAL_FLOW;// 标记为inbound
-				netflow.setSrcAs(this.topo.getAsNumber());
-				netflow.setDstAs(this.topo.getAsNumber());
-			} else if ((srcAS == topoAS && dstAS != topoAS)
-					|| (srcAS == 0 && dstAS != 0)) {// outboundflow
-
-				flowDirection = Constant.OUTBOUND_FLOW;
-				netflow.setSrcAs(this.topo.getAsNumber());
-			} else if ((srcAS != topoAS && dstAS == topoAS)
-					|| (srcAS != 0 && dstAS == 0)) {// inboundflow
-
-				flowDirection = Constant.INBOUND_FLOW;
-				netflow.setDstAs(this.topo.getAsNumber());
-			} else {// transitflow
-				flowDirection = Constant.TRANSIT_FLOW;
+			// 在确定流量特性时不能根据报文中的srcASdstAS确定，因为除了ASBR外的叶子节点是不知道流量AS信息的，直接在stub中查找
+			if (netflow == null) {
+				continue;
 			}
 
-			processFlow(netflow, flowDirection);
+			srcIn = true;
+			dstIn = true;
+			srcRouterId = getRId(netflow, Constant.SRC_ADDRESS);
 
+			if (srcRouterId == 0) {
+				debug(netflow.getSrcAddr(), 0);
+				continue;
+			}
+
+			dstRouterId = getRId(netflow, Constant.DST_ADDRESS);
+			// 根据前缀信息获得asbr id 同时铺完边界链路流量
+
+			if (dstRouterId == 0) {
+				debug(0, netflow.getDstAddr());
+				return;
+			}
+
+			netflow.setSrcRouter(srcRouterId);
+			netflow.setDstRouter(dstRouterId);
+
+			Path path;
+
+			if (srcRouterId == dstRouterId) {// 如果源和目的设备id相同 ,不处理
+				debug(0, 0);
+				continue;
+			}
+
+			path = this.processer.getPathByIds(srcRouterId + "_" + dstRouterId);
+
+			if (path == null) { // 打印信息
+				// debug(netflow.getSrcAddr(), netflow.getDstAddr());
+				continue;
+			}
+
+			if (srcIn && dstIn) {
+				this.processer.updateStatics(netflow, Constant.INTERNAL_FLOW);
+			} else if (srcIn && !dstIn) {
+				this.processer.updateStatics(netflow, Constant.OUTBOUND_FLOW);
+			} else if (!srcIn && dstIn) {
+				this.processer.updateStatics(netflow, Constant.INBOUND_FLOW);
+			}
+
+			debug(path);
+			// 插入流量
+			insertFlow(netflow, path);
 		}// end of for
 			// 所有流量都分析完了
-		sendCompleteSignal();// 通知主线程已经分析完了
 		if (this.allFlowRoute.size() > 0) {
 			writeToDB();// 存入数据库
 		}
 	}
 
-	private long getRId(long ip, byte mask) {
+	private long getRId(Netflow flow, boolean isSrcAddress) {
 		// 这里打了个补丁，这样能保证网络中的所有流量都能被分析，而非只分析终端，如果netflow中的源ip或者目的ip是路由器的接口ip，那么先根据ip地址定位到路由器，这里包括每个路由器接口ip和边界路由器接口ip
+		long ip = 0l;
+		byte mask = 0;
+
+		if (isSrcAddress == true) {
+			ip = flow.getSrcAddr();
+			mask = flow.getSrcMask();
+		} else {
+			ip = flow.getDstAddr();
+			mask = flow.getDstMask();
+		}
+
 		long routerId = this.topo.getRouterInterByIp(ip);
 
 		if (routerId != 0) {// 是路由器接口发出的流量
 			return routerId;
 		}
 
-		return this.topo.getRouterIdByPrefix(ip, mask);// 根据源ip，mask获得源设备id
+		routerId = this.topo.getRouterIdByPrefix(ip, mask);// 根据源ip，mask获得源设备id
+
+		if (routerId != 0) {
+			return routerId;
+		}
+
+		if (isSrcAddress == true) {
+			this.srcIn = false;
+			routerId = getAsbrIdByRouterIp(flow.getRouterIP());
+		} else {
+			this.dstIn = false;
+			routerId = getAsbrIdByPrefix(ip, mask, flow.getdOctets(),
+					flow.getDstPort());
+		}
+
+		return routerId;
+	}
+
+	private long getAsbrIdByRouterIp(long routerIp) {
+		return this.topo.getAsbrRidByIp(routerIp);
+	}
+
+	private long getAsbrIdByPrefix(long ip, byte mask, long bytes, int port) {
+		Object[] result = this.topo.getAsbrIdByPrefix(ip, mask);
+
+		if (result == null) {
+			return 0;
+		}
+
+		setMapLidTraffic((Integer) result[1], bytes, port);// 铺域间链路流量
+		return (Long) result[0];// 返回边界路由器id
 	}
 
 	/**
@@ -282,7 +329,7 @@ public class OspfAnalyser implements Runnable {
 		return bestCandidate;
 	}
 
-	public void insertFlow(Netflow netflow, Path path, int direction) {
+	public void insertFlow(Netflow netflow, Path path) {
 		ArrayList<Link> links = path.getLinks();
 		Link link = null;
 		int size = links.size();
@@ -294,80 +341,8 @@ public class OspfAnalyser implements Runnable {
 			linkId = link.getLinkId();
 			setMapLidTraffic(linkId, bytes, netflow.getDstPort());
 		}
-		Flow flow = new Flow(netflow, path, direction);
+		Flow flow = new Flow(netflow, path);
 		this.allFlowRoute.add(flow);
-	}
-
-	private long getAsbrIdByRouterIp(long routerIp) {
-		return this.topo.getAsbrRidByIp(routerIp);
-	}
-
-	private long getAsbrIdByPrefix(long ip, byte mask, long bytes, int port) {
-		Object[] result = this.topo.getAsbrIdByPrefix(ip, mask);
-
-		if (result == null) {
-			return 0;
-		}
-
-		setMapLidTraffic((Integer) result[1], bytes, port);// 铺域间链路流量
-		return (Long) result[0];// 返回边界路由器id
-	}
-
-	private void processFlow(Netflow netflow, int type) {
-		if (netflow == null || type < 0) {
-			return;
-		}
-
-		long srcRouterId, dstRouterId;
-
-		if (type == Constant.INTERNAL_FLOW || type == Constant.OUTBOUND_FLOW) {
-			srcRouterId = getRId(netflow.getSrcAddr(), netflow.getSrcMask());
-		} else {
-			srcRouterId = getAsbrIdByRouterIp(netflow.getRouterIP());
-		}
-
-		if (srcRouterId == 0) {
-			// netflow.printDetail();
-			// debug(netflow.getSrcAddr(), 0);
-			return;
-		}
-
-		if (type == Constant.INTERNAL_FLOW || type == Constant.INBOUND_FLOW) {
-			dstRouterId = getRId(netflow.getDstAddr(), netflow.getDstMask());
-		} else {
-			// 根据前缀信息获得asbr id 同时铺完边界链路流量
-			dstRouterId = getAsbrIdByPrefix(netflow.getDstAddr(),
-					netflow.getDstMask(), netflow.getdOctets(),
-					netflow.getDstPort());
-		}
-
-		if (dstRouterId == 0) {
-			// netflow.printDetail();
-			// debug(0, netflow.getDstAddr());
-			return;
-		}
-
-		netflow.setSrcRouter(srcRouterId);
-		netflow.setDstRouter(dstRouterId);
-
-		Path path;
-
-		if (srcRouterId == dstRouterId) {// 如果源和目的设备id相同 ,不处理
-			// netflow.printDetail();
-			// debug(0, 0);
-			return;
-		}
-
-		path = this.processer.getPathByIds(srcRouterId + "_" + dstRouterId);
-
-		if (path == null) { // 打印信息
-			// debug(netflow.getSrcAddr(), netflow.getDstAddr());
-			return;
-		}
-
-		// debug(path);
-		// 插入流量
-		insertFlow(netflow, path, type);
 	}
 
 	/**
@@ -414,31 +389,8 @@ public class OspfAnalyser implements Runnable {
 		this.netflows = netflows;
 	}
 
-	public void sendCompleteSignal() {
-		this.completeLock.lock();
-		try {
-			System.out.println("complete signal wake up....");
-			this.completed = true;
-			this.completeCon.signal();
-		} finally {
-			this.completeLock.unlock();
-		}
-	}
-
-	public void completedSignal() {
-		this.completeLock.lock();
-		try {
-			if (!this.completed) {
-				System.out.println("complete signal waiting....");
-				this.completeCon.await();
-			}
-			System.out.println("complete signal return....");
-			this.completed = false;
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		} finally {
-			this.completeLock.unlock();
-		}
+	public void setRouterIdsToPrecal(List<Long> routerIds) {
+		this.routerIds = routerIds;
 	}
 
 	/**
@@ -454,33 +406,35 @@ public class OspfAnalyser implements Runnable {
 			this.flowLock.unlock();
 		}
 	}
+
+	private void debug(Path path) {
+		System.out.println("result path:" + path.getPathInIpFormat());
+		System.out.println("*********************************************\n");
+	}
+
 	//
-	// private void debug(Path path) {
-	// System.out.println("result path:" + path.getPathInIpFormat());
-	// System.out.println("*********************************************\n");
-	// }
-	//
-	// private void debug(long srcIp, long dstIp) {
-	// if (srcIp != 0 && dstIp != 0) {
-	// logger.warning("cannot find path for:"
-	// + IPTranslator.calLongToIp(srcIp) + " "
-	// + IPTranslator.calLongToIp(dstIp));
-	// } else {
-	// if (srcIp != 0) {
-	// logger.warning("cannot find prefix for:"
-	// + IPTranslator.calLongToIp(srcIp));
-	// return;
-	// }
-	// if (dstIp != 0) {
-	// logger.warning("cannot find prefix for:"
-	// + IPTranslator.calLongToIp(dstIp));
-	// return;
-	// }
-	//
-	// logger.warning("src router id is same with dst router id!");
-	//
-	// }
-	// System.out
-	// .println("***************************************************\n");
-	// }
+	private void debug(long srcIp, long dstIp) {
+		if (srcIp != 0 && dstIp != 0) {
+			logger.warning("cannot find path for:"
+					+ IPTranslator.calLongToIp(srcIp) + " "
+					+ IPTranslator.calLongToIp(dstIp));
+		} else {
+			if (srcIp != 0) {
+				logger.warning("cannot find prefix for:"
+						+ IPTranslator.calLongToIp(srcIp));
+				return;
+			}
+			if (dstIp != 0) {
+				logger.warning("cannot find prefix for:"
+						+ IPTranslator.calLongToIp(dstIp));
+				return;
+			}
+
+			logger.warning("src router id is same with dst router id!");
+
+		}
+		System.out
+				.println("***************************************************\n");
+	}
+
 }

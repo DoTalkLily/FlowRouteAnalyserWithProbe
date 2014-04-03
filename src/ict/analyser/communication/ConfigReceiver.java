@@ -23,7 +23,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class ConfigReceiver extends Thread {
+public class ConfigReceiver implements Runnable {
 	private Socket client = null;// 连接到本服务器的客户端socket
 	private static int PORT = 7890; // web发布与数据库板卡负责分发配置文件的端口
 	private static int BUFFER_SIZE = 8192;// 缓冲区大小

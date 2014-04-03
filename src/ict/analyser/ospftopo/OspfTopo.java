@@ -10,6 +10,8 @@ import ict.analyser.tools.IPTranslator;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map.Entry;
 import java.util.logging.Logger;
 
 /**
@@ -23,8 +25,6 @@ public class OspfTopo {
 	private long periodId = 0;// 周期id，标记当前是第几周期
 	private ArrayList<Long> asbrIds = null;// 保存全部边界路由器id
 	private ArrayList<Integer> linkIds = null;// 保存全部链路id的数组
-	private ArrayList<Long> allRouterIds = null;// 保存全网路由器id列表
-	private ArrayList<Long> neighborAsIps = null;// 邻居as边界路由器ip地址用在统计分析模块如果srcip或者dstip是来自这些ip那netflow报文中as号也是0
 	private HashMap<Long, Long> mapIpRouterid = null;// 保存本AS内路由器ip——id映射
 	private HashMap<Long, OspfRouter> mapRidAsbr = null;// 拓扑中边界路由器id——路由器对象映射
 	private HashMap<Long, Long> mapPrefixRouterId = null;// topo文件中stubs对应的
@@ -42,7 +42,6 @@ public class OspfTopo {
 
 		this.asbrIds = new ArrayList<Long>();
 		this.linkIds = new ArrayList<Integer>();
-		this.allRouterIds = new ArrayList<Long>();
 		this.mapIpRouterid = new HashMap<Long, Long>();
 		this.mapRidAsbr = new HashMap<Long, OspfRouter>();
 		this.mapPrefixRouterId = new HashMap<Long, Long>();
@@ -287,7 +286,6 @@ public class OspfTopo {
 	public void setRidRouter(long rid, OspfRouter router) {
 		if (rid != 0 && router != null) {
 			this.mapRidRouter.put(rid, router);
-			this.allRouterIds.add(rid);
 		}
 	}
 
@@ -345,17 +343,6 @@ public class OspfTopo {
 		}
 	}
 
-	/*
-	 * 返回拓扑中路由器数量
-	 */
-	public int getRouterCount() {
-		if (this.allRouterIds == null) {
-			return 0;
-		}
-
-		return this.allRouterIds.size();
-	}
-
 	/**
 	 * @param mapPrefixExternalLsa
 	 *            The mapPrefixExternalLsa to set.
@@ -377,7 +364,21 @@ public class OspfTopo {
 	 * 返回全网路由器id列表
 	 */
 	public ArrayList<Long> getAllRouterIds() {
-		return this.allRouterIds;
+		if (this.mapRidRouter.size() == 0) {
+			return null;
+		}
+
+		Entry<Long, OspfRouter> entry = null;
+		Iterator<Entry<Long, OspfRouter>> iterator = this.mapRidRouter
+				.entrySet().iterator();
+		ArrayList<Long> allRouterIds = new ArrayList<Long>();
+
+		while (iterator.hasNext()) {
+			entry = iterator.next();
+			allRouterIds.add(entry.getKey());
+		}
+
+		return allRouterIds;
 	}
 
 	/**
@@ -388,20 +389,8 @@ public class OspfTopo {
 	public void setInterAsLinks(long nexthop, InterAsLink interLink) {
 		if (nexthop != 0 && interLink != null) {
 			this.mapNextHopAsLink.put(nexthop, interLink);
-
-			if (this.neighborAsIps == null) {
-				this.neighborAsIps = new ArrayList<Long>();
-			}
-			this.neighborAsIps.add(nexthop);
 		}
 
-	}
-
-	/**
-	 * @return Returns the neighborAsIps.
-	 */
-	public ArrayList<Long> getNeighborAsIps() {
-		return neighborAsIps;
 	}
 
 }

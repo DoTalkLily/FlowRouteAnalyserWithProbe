@@ -5,6 +5,7 @@
  * pstmt.setLong(18, oneFlow.getPath().getSrcInterface());
  * 改成 pstmt.setLong(18, oneFlow.getPath().getDstInterface());
  */
+import ict.analyser.common.Constant;
 import ict.analyser.flow.Flow;
 import ict.analyser.netflow.Netflow;
 import ict.analyser.tools.Utils;
@@ -18,9 +19,12 @@ import java.util.ArrayList;
 
 public class DBOperator {
 	public boolean writeFlowToDB(long pid, ArrayList<Flow> flows) {
-		String sql = "insert into netflow values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
+		String sql;
+		Connection conn;
 
-		Connection conn = DBUtils.getConnection();// 从线程池中获得一个连接
+		sql = "insert into netflow" + pid / 10000
+				+ " values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);";
+		conn = DBUtils.getConnection();// 从线程池中获得一个连接
 
 		try {
 			if (!conn.isClosed()) {
@@ -111,5 +115,30 @@ public class DBOperator {
 			DBUtils.close(conn);
 		}
 		return null;
+	}
+
+	public static void createTable(long pid) {
+		if (pid <= 0) {
+			return;
+		}
+
+		String sql;
+		Connection conn;
+		Statement statement;
+		conn = DBUtils.getConnection();
+
+		try {
+			statement = conn.createStatement();
+			sql = "drop table if exists netflow" + (pid / 10000);
+			statement.execute(sql);
+			sql = "create table netflow" + (pid / 10000)
+					+ Constant.CREATE_TABLE;
+			statement.execute(sql);
+			statement.close();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} finally {
+			DBUtils.close(conn);
+		}
 	}
 }

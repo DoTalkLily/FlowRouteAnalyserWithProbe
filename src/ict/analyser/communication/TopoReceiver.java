@@ -33,7 +33,7 @@ import java.util.logging.Logger;
  * @version 1.0, 2012-10-25
  * @version 1.1, 2013-2-18 添加容错机制，如果一个连接错误或者数据传输错误，关闭连接，不解析拓扑
  */
-public class TopoReceiver extends Thread {
+public class TopoReceiver implements Runnable {
 	private static int port = 2012;// 端口号(待定)
 	private static int bufferSize = 50 * 1024;// 缓冲区大小
 	private boolean startSignal = false;// 每个周期开始接收文件时发送给主线程的signal
@@ -81,7 +81,7 @@ public class TopoReceiver extends Thread {
 	}
 
 	/**
-	 * 初始化一个socket和输入输出流
+	 * 每个周期的处理流程
 	 * 
 	 */
 	private void doTask() {
@@ -202,7 +202,7 @@ public class TopoReceiver extends Thread {
 				System.out.println("outter:" + this.isOuterInfoChanged
 						+ "   topo:" + this.isTopoChanged);
 
-				this.processer.setPid(FileProcesser.getPid());
+				// this.processer.setPid(FileProcesser.getPid());
 				if (this.isTopoChanged) {// 如果topo改变了
 					if (this.isOuterInfoChanged) {// 如果bgp和LSA5信息变了
 						if (newTopo == null) {// 但是没解析到拓扑数据，报错返回，用原来拓扑数据

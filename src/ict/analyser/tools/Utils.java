@@ -1,5 +1,7 @@
 package ict.analyser.tools;
 
+import ict.analyser.common.Constant;
+
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -82,7 +84,7 @@ public abstract class Utils {
 				& (long) abyte0[offset + 3];
 	}
 
-	static public long byte2long(byte[] p, int off, int len) {
+	public static long byte2long(byte[] p, int off, int len) {
 		long ret = 0;
 		int done = off + len;
 		for (int i = off; i < done; i++)
@@ -91,7 +93,16 @@ public abstract class Utils {
 		return ret;
 	}
 
-	static public long byte2longSmall(byte[] p, int off, int len) {
+	public static final long to_number(byte[] p, int off, int len) {
+		long ret = 0;
+		int done = off + len;
+		for (int i = off; i < done; i++)
+			ret = ((ret << 8) & 0xffffffff) + (p[i] & 0xff);
+
+		return ret;
+	}
+
+	public static long byte2longSmall(byte[] p, int off, int len) {
 		long ret = 0;
 		int done = off + len;
 		for (int i = done - 1; i >= off; i--)
@@ -108,14 +119,14 @@ public abstract class Utils {
 		return (short) byte2long(p, offset, 2);
 	}
 
-	static private final String value(long num, String msg) {
+	private static final String value(long num, String msg) {
 		if (num == 0)
 			return "";
 
 		return (num == 1 ? "1 " + msg : num + " " + msg + "s") + ", ";
 	}
 
-	static public final String uptime(long time) {
+	public static final String uptime(long time) {
 		if (time == 0)
 			return "0 seconds";
 
@@ -132,14 +143,14 @@ public abstract class Utils {
 		return ret.substring(0, ret.length() - 2);
 	}
 
-	static private final char digits[] = { '0', '1', '2', '3', '4', '5', '6',
+	private static final char digits[] = { '0', '1', '2', '3', '4', '5', '6',
 			'7', '8', '9' };
 
-	static private final String value1(long l) {
+	private static final String value1(long l) {
 		return "" + digits[(int) (l / 10) % 10] + digits[(int) l % 10];
 	}
 
-	static public final String uptime_short(long time) {
+	public static final String uptime_short(long time) {
 		if (time == 0)
 			return "00:00";
 
@@ -156,25 +167,24 @@ public abstract class Utils {
 	}
 
 	static SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMddHHmm");
-	static int START_YEAR = 2013;
 
-	static public final int pid2HourOfYear(long pid) {
+	public static final int pid2HourOfYear(long pid) {
 		Date date = null;
 		try {
 			date = sdf.parse(pid + "");
 			Calendar calendar = Calendar.getInstance(); // 得到日历
 			calendar.setTime(date);// 把当前时间赋给日历
 			// 距离2013年1月1日0点过去过少个小时
-			return (calendar.get(Calendar.YEAR) - START_YEAR) * 8760
+			return (calendar.get(Calendar.YEAR) - Constant.START_YEAR) * 8760
 					+ calendar.get(Calendar.DAY_OF_YEAR) * 24
-					+ +calendar.get(Calendar.HOUR_OF_DAY);
+					+ calendar.get(Calendar.HOUR_OF_DAY);
 		} catch (ParseException e) {
 			e.printStackTrace();
 		}
 		return 0;
 	}
 
-	static public final String toInterval(long i) {
+	public static final String toInterval(long i) {
 		if (i < 60)
 			return i + "S";
 
