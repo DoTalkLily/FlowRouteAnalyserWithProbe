@@ -7,6 +7,7 @@
 package ict.analyser.ospftopo;
 
 import ict.analyser.tools.IPTranslator;
+import ict.analyser.tools.Utils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -125,6 +126,8 @@ public class OspfTopo {
 					Object[] result = new Object[2];
 					result[0] = link.getMyBrId();
 					result[1] = link.getLinkId();
+					result[2] = item.getAsPath().get(
+							(item.getAsPath().size() - 1));// 目的prefix的as号
 					return result;
 				}
 			}
@@ -145,13 +148,11 @@ public class OspfTopo {
 
 		Object obj = this.mapIpRouterid.get(ip);
 
-		if (obj == null) {
-			logger.warning("cannot get rid of ip:"
-					+ IPTranslator.calLongToIp(ip));
-			return 0;
+		if (obj != null) {
+			return (Long) obj;
 		}
 
-		return (Long) obj;
+		return getRouterIdByPrefix(ip, Utils.IntToByte(32));// 有时routerIp会在stub中，即lsa3
 	}
 
 	/**

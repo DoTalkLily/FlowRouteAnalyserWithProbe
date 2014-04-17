@@ -171,7 +171,7 @@ public abstract class Utils {
 	public static final int pid2HourOfYear(long pid) {
 		Date date = null;
 		try {
-			date = sdf.parse(pid + "");
+			date = sdf.parse(String.valueOf(pid));
 			Calendar calendar = Calendar.getInstance(); // 得到日历
 			calendar.setTime(date);// 把当前时间赋给日历
 			// 距离2013年1月1日0点过去过少个小时

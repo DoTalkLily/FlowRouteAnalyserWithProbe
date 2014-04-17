@@ -118,7 +118,7 @@ public class OspfAnalyser extends Thread {
 
 			if (dstRouterId == 0) {
 				debug(0, netflow.getDstAddr());
-				return;
+				continue;
 			}
 
 			netflow.setSrcRouter(srcRouterId);
@@ -138,12 +138,27 @@ public class OspfAnalyser extends Thread {
 				continue;
 			}
 
-			if (srcIn && dstIn) {
+			if (srcIn && dstIn) {// internal flow
 				this.processer.updateStatics(netflow, Constant.INTERNAL_FLOW);
-			} else if (srcIn && !dstIn) {
+			} else if (srcIn && !dstIn) {// outbound flow
 				this.processer.updateStatics(netflow, Constant.OUTBOUND_FLOW);
-			} else if (!srcIn && dstIn) {
+			} else if (!srcIn && dstIn) { // inbound flow
 				this.processer.updateStatics(netflow, Constant.INBOUND_FLOW);
+			}
+
+			if (srcIn) {
+				netflow.setSrcAs(this.topo.getAsNumber());
+			} else {
+				if (netflow.getSrcAs() == 0) {
+					netflow.setDstAs(getAsByPrefix(netflow.getSrcAddr(),
+							netflow.getSrcMask()));
+				}
+			}
+
+			if (dstIn) {
+				netflow.setDstAs(this.topo.getAsNumber());
+			} else {
+				netflow.setDstAs(this.dstAS);
 			}
 
 			debug(path);
@@ -197,6 +212,8 @@ public class OspfAnalyser extends Thread {
 		return this.topo.getAsbrRidByIp(routerIp);
 	}
 
+	private int dstAS = 0;
+
 	private long getAsbrIdByPrefix(long ip, byte mask, long bytes, int port) {
 		Object[] result = this.topo.getAsbrIdByPrefix(ip, mask);
 
@@ -204,8 +221,19 @@ public class OspfAnalyser extends Thread {
 			return 0;
 		}
 
+		this.dstAS = (Integer) result[2];
 		setMapLidTraffic((Integer) result[1], bytes, port);// 铺域间链路流量
 		return (Long) result[0];// 返回边界路由器id
+	}
+
+	private int getAsByPrefix(long ip, byte mask) {
+		Object[] result = this.topo.getAsbrIdByPrefix(ip, mask);
+
+		if (result == null) {
+			return 0;
+		}
+
+		return (Integer) result[2];
 	}
 
 	/**
